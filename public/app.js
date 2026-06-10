@@ -7,7 +7,16 @@ let map;
 let infoWindow;
 let selectedDay = 'all';
 let startFinish = null;
-const routes = {}; // day -> { polyline, bounds, distance_m }
+const routes = {}; // day -> { polyline, bounds, distance_m, crossings }
+
+// Verkeersregelaars-weergave
+const DIAMOND = 'M 0 -1 L 1 0 L 0 1 L -1 0 Z';
+let vrOn = false;
+let vrTeam = 'all';
+let teams = [];
+let teamRoutes = {}; // `${teamId}_${day}` -> { path, conflicts }
+let vrMarkers = [];
+let vrPolylines = [];
 
 // GPS-status
 let watchId = null;
@@ -78,6 +87,7 @@ window.initMap = async function () {
   }
 
   await loadRoutes();
+  await loadVrData();
 };
 
 async function loadRoutes() {
@@ -104,11 +114,41 @@ async function loadRoutes() {
     });
     const bounds = new google.maps.LatLngBounds();
     path.forEach((p) => bounds.extend(p));
-    routes[row.day] = { polyline, bounds, distance_m: row.distance_m };
+    routes[row.day] = {
+      polyline,
+      bounds,
+      distance_m: row.distance_m,
+      crossings: (row.crossings || []).filter((c) => !c.hidden),
+    };
   }
 
   renderDistanceList();
   applySelection();
+}
+
+async function loadVrData() {
+  try {
+    const [teamsRes, routesRes] = await Promise.all([
+      fetch('/api/teams'),
+      fetch('/api/team-routes'),
+    ]);
+    if (teamsRes.ok) teams = await teamsRes.json();
+    if (routesRes.ok) {
+      for (const row of await routesRes.json()) {
+        teamRoutes[`${row.team_id}_${row.day}`] = row;
+      }
+    }
+  } catch {
+    // Verkeersregelaarsdata is optioneel; de rest van de pagina werkt gewoon.
+  }
+  const select = document.getElementById('vr-team');
+  select.innerHTML = '<option value="all">Alle teams</option>';
+  for (const t of teams) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name;
+    select.appendChild(opt);
+  }
 }
 
 function renderDistanceList() {
@@ -147,8 +187,143 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     tab.classList.add('active');
     selectedDay = tab.dataset.day;
     applySelection();
+    refreshVrView();
   });
 });
+
+// --- Verkeersregelaars-weergave (geen wachtwoord nodig) ---
+function selectDayTab(day) {
+  document.querySelector('.day-tab.active').classList.remove('active');
+  document.querySelector(`.day-tab[data-day="${day}"]`).classList.add('active');
+  selectedDay = String(day);
+  applySelection();
+}
+
+document.getElementById('vr-toggle').addEventListener('click', () => {
+  vrOn = !vrOn;
+  document.getElementById('vr-panel').classList.toggle('hidden', !vrOn);
+  document.getElementById('vr-toggle').textContent = vrOn
+    ? '✕ Sluit verkeersregelaars-weergave'
+    : '🦺 Open verkeersregelaars-weergave';
+  // Oversteekpunten zijn per dag; kies dag 1 als er nog "alle" actief is.
+  if (vrOn && selectedDay === 'all') selectDayTab(1);
+  refreshVrView();
+});
+
+document.getElementById('vr-team').addEventListener('change', (e) => {
+  vrTeam = e.target.value;
+  refreshVrView();
+});
+
+function teamById(id) {
+  return teams.find((t) => t.id === id) || null;
+}
+
+function refreshVrView() {
+  vrMarkers.forEach((m) => m.setMap(null));
+  vrMarkers = [];
+  vrPolylines.forEach((p) => p.setMap(null));
+  vrPolylines = [];
+  const warningEl = document.getElementById('vr-warning');
+  warningEl.textContent = '';
+  if (!vrOn || selectedDay === 'all') return;
+
+  const day = Number(selectedDay);
+  const crossings = (routes[day] && routes[day].crossings) || [];
+  const teamFilter = vrTeam === 'all' ? null : Number(vrTeam);
+
+  let index = 0;
+  for (const c of crossings) {
+    index++;
+    const team = c.team != null ? teamById(c.team) : null;
+    const isMine = teamFilter === null || c.team === teamFilter;
+    const marker = new google.maps.Marker({
+      position: { lat: c.lat, lng: c.lng },
+      map,
+      title: c.name,
+      icon: {
+        path: DIAMOND,
+        scale: 9,
+        fillColor: team ? team.color : '#f59e0b',
+        fillOpacity: isMine ? 1 : 0.35,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+      },
+      label: { text: String(index), color: '#fff', fontSize: '10px', fontWeight: 'bold' },
+      zIndex: 500,
+    });
+    marker.addListener('click', () => {
+      const div = document.createElement('div');
+      div.className = 'point-menu';
+      const title = document.createElement('strong');
+      title.textContent = `🦺 Punt ${index2Label(marker)}: ${c.name}`;
+      div.appendChild(title);
+      const teamLine = document.createElement('span');
+      teamLine.textContent = team ? `Team: ${team.name}` : 'Nog geen team toegewezen';
+      div.appendChild(teamLine);
+      const svBtn = document.createElement('button');
+      svBtn.textContent = '👀 Bekijk in Street View';
+      svBtn.addEventListener('click', () => {
+        infoWindow.close();
+        const pano = map.getStreetView();
+        pano.setPosition({ lat: c.lat, lng: c.lng });
+        pano.setPov({ heading: 0, pitch: 0 });
+        pano.setVisible(true);
+      });
+      div.appendChild(svBtn);
+      infoWindow.setContent(div);
+      infoWindow.open({ anchor: marker, map });
+    });
+    vrMarkers.push(marker);
+  }
+
+  const warnings = [];
+  for (const t of teams) {
+    if (teamFilter !== null && t.id !== teamFilter) continue;
+    const tr = teamRoutes[`${t.id}_${day}`];
+    if (!tr || !tr.path) continue;
+    const polyline = new google.maps.Polyline({
+      path: tr.path,
+      map,
+      strokeOpacity: 0,
+      zIndex: 400,
+      icons: [
+        {
+          icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: t.color, strokeWeight: 3, scale: 3 },
+          offset: '0',
+          repeat: '14px',
+        },
+      ],
+    });
+    vrPolylines.push(polyline);
+    if ((tr.conflicts || []).length > 0) {
+      warnings.push(`⚠️ Route van ${t.name} doorkruist de wandelroute op ${tr.conflicts.length} plek(ken)!`);
+      for (const conflict of tr.conflicts) {
+        const cm = new google.maps.Marker({
+          position: conflict,
+          map,
+          title: `Conflict: route van ${t.name} kruist de wandelroute`,
+          label: { text: '!', color: '#fff', fontWeight: 'bold' },
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 11,
+            fillColor: '#dc2626',
+            fillOpacity: 1,
+            strokeColor: '#fff',
+            strokeWeight: 2,
+          },
+          zIndex: 1001,
+        });
+        vrMarkers.push(cm);
+      }
+    }
+  }
+  warningEl.textContent = warnings.join(' ');
+}
+
+function index2Label(marker) {
+  return marker.getLabel() ? marker.getLabel().text : '';
+}
 
 // --- GPS ---
 const gpsStartBtn = document.getElementById('gps-start');

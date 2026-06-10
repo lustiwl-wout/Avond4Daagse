@@ -24,6 +24,14 @@
 
       <div id="editor" class="hidden">
         <section>
+          <h2>Modus</h2>
+          <div id="mode-tabs">
+            <button id="mode-route" class="mode-tab active">🗺 Route</button>
+            <button id="mode-vr" class="mode-tab">🦺 Verkeersregelaars</button>
+          </div>
+        </section>
+
+        <section>
           <h2>Dag</h2>
           <div id="day-tabs">
             <button class="day-tab active" data-day="1">Dag 1</button>
@@ -33,37 +41,70 @@
           </div>
         </section>
 
-        <section>
-          <h2>Route tekenen</h2>
-          <p class="hint">
-            Start en finish liggen vast (🏁) en gelden voor alle dagen; versleep de
-            vlag eenmalig als hij niet precies goed staat. Klik op de kaart om
-            tussenpunten toe te voegen — de route volgt automatisch wandelend de
-            straten, van 🏁 naar 🏁. <strong>Sleep</strong> een punt om hem te
-            verplaatsen, <strong>klik</strong> op een punt voor Street View,
-            verwijderen of een punt ertussen voegen.
-          </p>
-          <div id="route-info">
-            <span id="point-count">0 tussenpunten</span>
-            <strong id="distance">0,0 km</strong>
-          </div>
-          <div class="button-row">
-            <button id="undo-btn">↩ Laatste punt weg</button>
-            <button id="clear-btn">🗑 Wis kaart</button>
-          </div>
-        </section>
+        <div id="route-mode">
+          <section>
+            <h2>Route tekenen</h2>
+            <p class="hint">
+              Start en finish liggen vast (🏁) en gelden voor alle dagen; versleep de
+              vlag eenmalig als hij niet precies goed staat. Klik op de kaart om
+              tussenpunten toe te voegen — de route volgt automatisch wandelend de
+              straten, van 🏁 naar 🏁. <strong>Sleep</strong> een punt om hem te
+              verplaatsen, <strong>klik</strong> op een punt voor Street View,
+              verwijderen of een punt ertussen voegen.
+            </p>
+            <div id="route-info">
+              <span id="point-count">0 tussenpunten</span>
+              <strong id="distance">0,0 km</strong>
+            </div>
+            <div class="button-row">
+              <button id="undo-btn">↩ Laatste punt weg</button>
+              <button id="clear-btn">🗑 Wis kaart</button>
+            </div>
+          </section>
 
-        <section>
-          <h2>Opslaan</h2>
-          <button id="save-btn">💾 Opslaan als route dag 1</button>
-          <button id="delete-btn">❌ Verwijder route dag 1</button>
-          <p id="save-status" class="hint"></p>
-        </section>
+          <section>
+            <h2>Opslaan</h2>
+            <button id="save-btn">💾 Opslaan als route dag 1</button>
+            <button id="delete-btn">❌ Verwijder route dag 1</button>
+          </section>
+        </div>
+
+        <div id="vr-mode" class="hidden">
+          <section>
+            <h2>Oversteekpunten</h2>
+            <p class="hint">
+              Detecteer automatisch alle plekken waar de wandelroute een weg of
+              fietspad kruist. <strong>Klik</strong> op een ruitje om het punt te
+              verbergen (telt niet mee voor de planning, route blijft gelijk), een
+              team toe te wijzen of Street View te openen.
+            </p>
+            <button id="detect-btn">🔍 Detecteer kruisingen dag 1</button>
+          </section>
+
+          <section>
+            <h2>Teams</h2>
+            <ul id="team-list"><li class="hint">Nog geen teams.</li></ul>
+            <input type="text" id="team-name" placeholder="Naam, bijv. Team A" />
+            <button id="add-team-btn">➕ Team toevoegen</button>
+          </section>
+
+          <section>
+            <h2>Teamroutes</h2>
+            <p class="hint">
+              Berekent per team de route 🏁 → eigen punten → 🏁 (stippellijn) en
+              controleert dat die de wandelroute <strong>nooit doorkruist</strong>.
+            </p>
+            <button id="team-routes-btn">🧭 Bereken teamroutes dag 1</button>
+            <p id="vr-status" class="hint"></p>
+          </section>
+        </div>
 
         <section>
           <h2>Street View</h2>
           <p class="hint">Sleep het gele poppetje (rechtsonder op de kaart) op de route om de straat te bekijken.</p>
         </section>
+
+        <p id="save-status" class="hint"></p>
       </div>
     </aside>
 

@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
+const { distanceM, findCrossings, findConflicts } = require('./geometry');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -44,6 +45,26 @@ async function initDb() {
       key TEXT PRIMARY KEY,
       value JSONB NOT NULL,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query('ALTER TABLE day_routes ADD COLUMN IF NOT EXISTS crossings JSONB');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS teams (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      color TEXT NOT NULL,
+      mode TEXT NOT NULL DEFAULT 'BICYCLING'
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS team_routes (
+      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
+      path JSONB,
+      distance_m INTEGER,
+      conflicts JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (team_id, day)
     )
   `);
 }
@@ -144,7 +165,7 @@ app.get('/api/routes', async (req, res) => {
   if (!requireDb(res)) return;
   try {
     const { rows } = await pool.query(
-      'SELECT day, waypoints, path, distance_m, updated_at FROM day_routes ORDER BY day'
+      'SELECT day, waypoints, path, distance_m, crossings, updated_at FROM day_routes ORDER BY day'
     );
     res.json(rows);
   } catch (err) {
@@ -201,6 +222,249 @@ app.delete('/api/routes/:day', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Route verwijderen mislukt.' });
+  }
+});
+
+// --- Verkeersregelaars: kruisingdetectie, teams en teamroutes ---
+
+// Wegtypen waar verkeer kan rijden (auto's, fietsen, bussen).
+const HIGHWAY_FILTER =
+  '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|' +
+  'tertiary|tertiary_link|unclassified|residential|living_street|service|busway|cycleway|track)$';
+
+// Admin: detecteer alle oversteekpunten van de wandelroute met wegen en
+// fietspaden (wegendata via OpenStreetMap/Overpass). Eerder verborgen punten
+// en teamtoewijzingen blijven behouden op basis van nabijheid.
+app.post('/api/admin/crossings/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { path: walkPath } = req.body;
+  if (!Array.isArray(walkPath) || walkPath.length < 2 || !walkPath.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Geen routepad meegestuurd. Teken eerst de route.' });
+  }
+  try {
+    const margin = 0.0015;
+    const lats = walkPath.map((p) => p.lat);
+    const lngs = walkPath.map((p) => p.lng);
+    const bbox = [
+      Math.min(...lats) - margin,
+      Math.min(...lngs) - margin,
+      Math.max(...lats) + margin,
+      Math.max(...lngs) + margin,
+    ].join(',');
+    const query = `[out:json][timeout:25];way["highway"~"${HIGHWAY_FILTER}"](${bbox});out geom;`;
+    const overpass = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'data=' + encodeURIComponent(query),
+    });
+    if (!overpass.ok) {
+      return res
+        .status(502)
+        .json({ error: 'Wegendata ophalen mislukt (Overpass). Probeer het over een minuut opnieuw.' });
+    }
+    const osm = await overpass.json();
+    const ways = (osm.elements || []).filter((e) => e.type === 'way' && e.geometry);
+    const detected = findCrossings(walkPath, ways);
+
+    const { rows: existingRows } = await pool.query(
+      'SELECT crossings FROM day_routes WHERE day = $1',
+      [day]
+    );
+    if (existingRows.length === 0) {
+      return res.status(404).json({ error: 'Sla eerst de route van deze dag op.' });
+    }
+    const existing = existingRows[0].crossings || [];
+    const crossings = detected.map((c) => {
+      const match = existing.find((e) => distanceM(e, c) < 20);
+      return {
+        id: `${Math.round(c.lat * 1e5)}x${Math.round(c.lng * 1e5)}`,
+        lat: c.lat,
+        lng: c.lng,
+        name: c.name,
+        hidden: match ? !!match.hidden : false,
+        team: match && match.team != null ? match.team : null,
+      };
+    });
+    await pool.query('UPDATE day_routes SET crossings = $1, updated_at = now() WHERE day = $2', [
+      JSON.stringify(crossings),
+      day,
+    ]);
+    res.json(crossings);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Kruisingen detecteren mislukt.' });
+  }
+});
+
+// Admin: kruisingen bijwerken (verbergen/tonen, teamtoewijzing).
+app.put('/api/admin/crossings/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { crossings } = req.body;
+  if (!Array.isArray(crossings) || !crossings.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldige kruisingenlijst.' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE day_routes SET crossings = $1, updated_at = now() WHERE day = $2',
+      [JSON.stringify(crossings), day]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Kruisingen opslaan mislukt.' });
+  }
+});
+
+const TEAM_COLORS = ['#f97316', '#0ea5e9', '#84cc16', '#e11d48', '#8b5cf6', '#14b8a6', '#a16207', '#64748b'];
+const TEAM_MODES = ['WALKING', 'BICYCLING', 'DRIVING'];
+
+// Publiek: teams (de verkeersregelaarsweergave heeft geen wachtwoord).
+app.get('/api/teams', async (req, res) => {
+  if (!requireDb(res)) return;
+  try {
+    const { rows } = await pool.query('SELECT id, name, color, mode FROM teams ORDER BY id');
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Teams ophalen mislukt.' });
+  }
+});
+
+app.post('/api/admin/teams', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const { name, mode } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
+  const teamMode = TEAM_MODES.includes(mode) ? mode : 'BICYCLING';
+  try {
+    const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS n FROM teams');
+    const color = TEAM_COLORS[countRows[0].n % TEAM_COLORS.length];
+    const { rows } = await pool.query(
+      'INSERT INTO teams (name, color, mode) VALUES ($1, $2, $3) RETURNING id, name, color, mode',
+      [name.trim(), color, teamMode]
+    );
+    res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Team aanmaken mislukt.' });
+  }
+});
+
+app.put('/api/admin/teams/:id', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const { name, mode } = req.body;
+  if (mode && !TEAM_MODES.includes(mode)) return res.status(400).json({ error: 'Ongeldig vervoersmiddel.' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE teams SET name = COALESCE($1, name), mode = COALESCE($2, mode)
+       WHERE id = $3 RETURNING id, name, color, mode`,
+      [name || null, mode || null, req.params.id]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Team bijwerken mislukt.' });
+  }
+});
+
+app.delete('/api/admin/teams/:id', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const teamId = Number(req.params.id);
+  try {
+    const { rowCount } = await pool.query('DELETE FROM teams WHERE id = $1', [teamId]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
+    // Toewijzingen aan dit team weghalen uit alle kruisingen.
+    const { rows } = await pool.query('SELECT day, crossings FROM day_routes WHERE crossings IS NOT NULL');
+    for (const row of rows) {
+      const cleaned = row.crossings.map((c) => (c.team === teamId ? { ...c, team: null } : c));
+      await pool.query('UPDATE day_routes SET crossings = $1 WHERE day = $2', [
+        JSON.stringify(cleaned),
+        row.day,
+      ]);
+    }
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Team verwijderen mislukt.' });
+  }
+});
+
+// Publiek: alle teamroutes (voor de verkeersregelaarsweergave).
+app.get('/api/team-routes', async (req, res) => {
+  if (!requireDb(res)) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT team_id, day, path, distance_m, conflicts, updated_at FROM team_routes'
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Teamroutes ophalen mislukt.' });
+  }
+});
+
+// Admin: controleer of een teamroute de wandelroute van die dag doorkruist.
+app.post('/api/admin/conflicts/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { path: teamPath, exclude } = req.body;
+  if (!Array.isArray(teamPath) || teamPath.length < 2 || !teamPath.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldig teamroutepad.' });
+  }
+  try {
+    const { rows } = await pool.query('SELECT path FROM day_routes WHERE day = $1', [day]);
+    if (rows.length === 0 || !rows[0].path) {
+      return res.status(404).json({ error: 'Geen wandelroute voor deze dag.' });
+    }
+    const excludePoints = Array.isArray(exclude) ? exclude.filter(isValidLatLng) : [];
+    const conflicts = findConflicts(teamPath, rows[0].path, excludePoints);
+    res.json({ conflicts });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Conflictcontrole mislukt.' });
+  }
+});
+
+// Admin: teamroute voor een dag opslaan (path null wist de route).
+app.put('/api/admin/team-route/:teamId/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const teamId = Number(req.params.teamId);
+  const { path: teamPath, distance_m, conflicts } = req.body;
+  try {
+    if (!teamPath) {
+      await pool.query('DELETE FROM team_routes WHERE team_id = $1 AND day = $2', [teamId, day]);
+      return res.status(204).end();
+    }
+    if (!Array.isArray(teamPath) || !teamPath.every(isValidLatLng)) {
+      return res.status(400).json({ error: 'Ongeldig teamroutepad.' });
+    }
+    await pool.query(
+      `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (team_id, day) DO UPDATE
+         SET path = EXCLUDED.path, distance_m = EXCLUDED.distance_m,
+             conflicts = EXCLUDED.conflicts, updated_at = now()`,
+      [teamId, day, JSON.stringify(teamPath), distance_m || null, JSON.stringify(conflicts || [])]
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Teamroute opslaan mislukt.' });
   }
 });
 

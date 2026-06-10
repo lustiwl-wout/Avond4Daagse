@@ -17,6 +17,17 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - "Opslaan als route dag X" overschrijft de route van die dag; er is precies één route per dag.
 
+## Verkeersregelaars
+
+**In de admin** (`/admin` → modus "🦺 Verkeersregelaars"):
+
+- **Kruisingen detecteren**: vindt automatisch alle plekken waar de wandelroute een weg of fietspad kruist (wegendata via OpenStreetMap). De punten verschijnen als genummerde ruitjes op de kaart.
+- Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen.
+- **Teams** aanmaken met eigen kleur en vervoer (lopend / fiets / auto).
+- **Teamroutes berekenen**: per team de route 🏁 → eigen posten → 🏁 als stippellijn. De app controleert automatisch dat een teamroute de wandelroute **nooit doorkruist** (aanraken bij de eigen posten en start/finish mag). Gaat het mis, dan zie je rode uitroeptekens op de conflictplekken plus een waarschuwing.
+
+**Voor de verkeersregelaars zelf** (bezoekerspagina, geen wachtwoord): knop "🦺 Open verkeersregelaars-weergave" → kies je team → je ziet de oversteekpunten, je eigen teamroute en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
+
 ## Lokaal draaien
 
 ```bash
