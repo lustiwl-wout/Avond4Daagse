@@ -1039,78 +1039,52 @@ function teamDirections(points) {
 }
 
 // --- Automatisch plannen ---
-// Punten die dicht bij elkaar liggen (bv. de armen van één rotonde of
-// kruispunt) vormen samen één post: één team dekt ze tegelijk af en hoeft er
-// niet tussen te reizen. Een team mag pas weg nadat de hele groep (500
-// wandelaars) het hele knooppunt voorbij is en moet zijn volgende post
-// bereiken vóór de kop van de groep daar aankomt.
-const POST_CLUSTER_M = 80;
-
-function buildPosts(d) {
-  const ordered = d.crossings
-    .filter((c) => !c.hidden)
-    .map((c) => ({ c, along: alongPath(d.path, c) }))
-    .sort((a, b) => a.along - b.along);
-  const posts = [];
-  for (const item of ordered) {
-    const last = posts[posts.length - 1];
-    if (last && distM(last.items[last.items.length - 1].c, item.c) < POST_CLUSTER_M) {
-      last.items.push(item);
-    } else {
-      posts.push({ items: [item] });
-    }
-  }
-  for (const post of posts) {
-    post.headMin = headMin(post.items[0].along); // kop van de groep bij het eerste punt
-    post.leaveMin = leaveMin(post.items[post.items.length - 1].along); // weg na het laatste punt
-    post.pos = post.items[Math.floor(post.items.length / 2)].c;
-  }
-  return posts;
-}
-
+// Eén team bemant één punt tegelijk. Het team mag pas vertrekken als de héle
+// stoet (500 wandelaars) zijn punt voorbij is, en moet zijn volgende punt
+// bereiken vóórdat de kop van de stoet daar aankomt. Dicht opeenvolgende
+// punten krijgen daardoor automatisch verschillende teams.
 document.getElementById('autoplan-btn').addEventListener('click', async () => {
   const d = days[currentDay];
   if (!d.path) return setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
   if (teams.length === 0) return setVrStatus('⚠️ Maak eerst teams aan.');
-  if (d.crossings.filter((c) => !c.hidden).length === 0) {
-    return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
-  }
+  const ordered = d.crossings
+    .filter((c) => !c.hidden)
+    .map((c) => ({ c, along: alongPath(d.path, c) }))
+    .sort((a, b) => a.along - b.along);
+  if (ordered.length === 0) return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
 
-  const posts = buildPosts(d);
-
-  // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder post
-  // kunnen vooraf klaarstaan en halen hun eerste post dus altijd.
+  // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder punt
+  // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
   const state = teams.map((team) => ({ team, freeMin: null, pos: null }));
   let unassigned = 0;
-  for (const post of posts) {
+  for (const { c, along } of ordered) {
+    const deadline = headMin(along);
     let best = null;
     for (const s of state) {
       const reachable =
-        s.pos === null ||
-        s.freeMin + bikeMin(s.pos, post.pos) + vrSettings.marginMin <= post.headMin;
+        s.pos === null || s.freeMin + bikeMin(s.pos, c) + vrSettings.marginMin <= deadline;
       if (!reachable) continue;
       // Kies het team dat het langst vrij is (natuurlijke rotatie/haasje-over).
       if (!best || (s.freeMin ?? -1) < (best.freeMin ?? -1)) best = s;
     }
-    for (const { c } of post.items) c.team = best ? best.team.id : null;
     if (best) {
-      best.pos = post.pos;
-      best.freeMin = post.leaveMin;
+      c.team = best.team.id;
+      best.pos = c;
+      best.freeMin = leaveMin(along);
     } else {
+      c.team = null;
       unassigned++;
     }
   }
   await saveCrossings(currentDay);
   refreshVrLayer();
-  const clustered = posts.filter((p) => p.items.length > 1).length;
-  const clusterNote = clustered > 0 ? ` (${clustered} knooppunt(en) met meerdere punten tellen als één post)` : '';
   if (unassigned > 0) {
     setVrStatus(
-      `⚠️ ${unassigned} van de ${posts.length} posten kunnen met ${teams.length} team(s) niet op tijd bemand worden — voeg een team toe of verberg punten${clusterNote}. Klik daarna op "Bereken teamroutes".`
+      `⚠️ ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten. Klik daarna op "Bereken teamroutes".`
     );
   } else {
     setVrStatus(
-      `✅ ${posts.length} posten verdeeld over ${teams.length} team(s)${clusterNote}. Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
+      `✅ Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
     );
   }
 });
@@ -1147,10 +1121,9 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     const teamPath = route.overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() }));
     const distance = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
 
-    // Tijdstoets: vertrekken kan pas als de hele groep voorbij is; de
-    // volgende post moet bereikt zijn vóór de kop van de groep er is.
-    // Punten binnen één knooppunt (< POST_CLUSTER_M) zijn samen één post:
-    // daartussen wordt niet gereisd en geldt geen deadline.
+    // Tijdstoets: een team bemant één punt tegelijk. Vertrekken kan pas als
+    // de héle stoet voorbij is; het volgende punt moet bereikt zijn vóórdat
+    // de kop van de stoet daar aankomt.
     // legs[i] is de fietsleg van punt i-1 naar punt i (leg 0 = vanaf 🏁).
     const schedule = points.map(({ c, along }) => ({
       name: c.name,
@@ -1159,22 +1132,15 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     }));
     let feasible = true;
     const late = [];
-    let prevLeave = leaveMin(points[0].along);
     for (let i = 1; i < points.length; i++) {
-      const deadline = headMin(points[i].along);
-      if (distM(points[i - 1].c, points[i].c) < POST_CLUSTER_M) {
-        // Zelfde post: team staat er al; vertrek pas als de groep ook hier voorbij is.
-        prevLeave = Math.max(prevLeave, leaveMin(points[i].along));
-        continue;
-      }
       const bikeMinutes = route.legs[i].duration.value / 60;
-      const arrive = prevLeave + bikeMinutes + vrSettings.marginMin;
+      const arrive = leaveMin(points[i - 1].along) + bikeMinutes + vrSettings.marginMin;
+      const deadline = headMin(points[i].along);
       schedule[i].arriveMin = round1(arrive);
       if (arrive > deadline) {
         feasible = false;
         late.push({ point: schedule[i].name, lateMin: round1(arrive - deadline) });
       }
-      prevLeave = leaveMin(points[i].along);
     }
     const timing = { feasible, schedule, late };
 
