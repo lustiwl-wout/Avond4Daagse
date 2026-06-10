@@ -25,7 +25,7 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 **In de admin** (`/admin` → modus "🦺 Verkeersregelaars"):
 
-- **Kruisingen detecteren** (automatisch na het publiceren van een route) via twee Google-signalen: wisselingen van wegsegment-ID langs de gesnapte route (**Roads API snapToRoads** — kruispunten op wegen waar de stoet overheen loopt) én plekken waar een weg de route maar heel kort dicht nadert (**Roads API nearestRoads** — oversteken vanaf fiets-/wandelpaden die Google niet als weg kent). Straatnamen komen van de **Google Geocoding API**. De punten verschijnen als genummerde ruitjes op de kaart.
+- **Kruisingen detecteren** (volautomatisch na het publiceren van een route): de wegendata komt van **OpenStreetMap** — dé kaartbron die voetpaden, fietspaden én alle zijstraten kent, in tegenstelling tot Googles Roads API die alleen autowegen bevat. Elke plek waar de route een weg kruist of waar een (zij)weg op de gelopen straat uitkomt wordt een genummerd ruitje op de kaart, met de straatnaam erbij. Hier is geen key of knop voor nodig.
 - Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen. Klik op de kaart om **zelf een extra punt toe te voegen** (blijft staan bij herdetectie).
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
 - **De planning loopt volautomatisch**: na elke routepublicatie of teamwijziging worden de punten over de teams verdeeld (haasje-over) en de fietsroutes per team (start → posten → finish, stippellijn) berekend, met twee controles:
@@ -45,20 +45,19 @@ export $(grep -v '^#' .env | xargs)
 npm start              # http://localhost:3000
 ```
 
-## Stap 1 — Google Maps API-keys (twee stuks)
+## Stap 1 — Google Maps API-key
 
 1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project aan.
-2. Schakel onder **APIs & Services → Library** deze zes API's in:
+2. Schakel onder **APIs & Services → Library** deze vijf API's in:
    - **Maps JavaScript API** (kaart + Street View)
    - **Directions API** (wandel- en fietsroutes over straten)
    - **Geocoding API** (adressen en straatnamen)
    - **Maps Static API** (kaartafbeeldingen op de printversie)
    - **Street View Static API** (Street View-foto's op de printversie)
-   - **Roads API** (kruisingdetectie via het wegennetwerk van Google)
-3. Maak onder **Credentials** twee API-keys aan:
-   - **Browser-key** (`GOOGLE_MAPS_API_KEY`): *Application restrictions* → Websites → `https://jouw-app.onrender.com/*`; *API restrictions* → Maps JavaScript, Directions, Geocoding, Maps Static, Street View Static.
-   - **Server-key** (`GOOGLE_MAPS_SERVER_KEY`): *Application restrictions* → **None** (de server roept Google rechtstreeks aan; een website-restrictie zou dit blokkeren); *API restrictions* → **Roads API + Geocoding API**. Deze key staat alleen op de server en is nooit zichtbaar in de browser.
+3. Maak onder **Credentials** een API-key aan en beperk hem: *Application restrictions* → Websites → `https://jouw-app.onrender.com/*`; *API restrictions* → de vijf bovenstaande API's.
 4. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
+
+> De kruisingdetectie gebruikt OpenStreetMap (gratis, geen key); een aparte serverkey is niet meer nodig — een eventueel eerder ingestelde `GOOGLE_MAPS_SERVER_KEY` kan weg.
 
 ## Stap 2 — Neon database
 
@@ -73,8 +72,7 @@ npm start              # http://localhost:3000
 2. Ga naar [render.com](https://render.com) → **New → Web Service** en koppel de repository (of gebruik **New → Blueprint**, dan wordt `render.yaml` automatisch gelezen).
 3. Zet bij **Environment Variables**:
    - `DATABASE_URL` = je Neon-connectiestring
-   - `GOOGLE_MAPS_API_KEY` = je browser-key
-   - `GOOGLE_MAPS_SERVER_KEY` = je server-key (Roads + Geocoding)
+   - `GOOGLE_MAPS_API_KEY` = je Google Maps-key
    - `ADMIN_PASSWORD` = zelfgekozen wachtwoord voor `/admin`
 4. Deploy — klaar! 🎉
 

@@ -448,7 +448,6 @@ function loadDayPoints(day, waypoints) {
 function updateDayLabels() {
   document.getElementById('save-btn').textContent = `Maak route dag ${currentDay} definitief`;
   document.getElementById('delete-btn').textContent = `Verwijder route dag ${currentDay}`;
-  document.getElementById('detect-btn').textContent = `Opnieuw detecteren en plannen (dag ${currentDay})`;
   document.getElementById('print-btn').textContent = `Printversie dag ${currentDay}`;
   document.getElementById('rec-save').textContent = `Definitief dag ${currentDay}`;
   updateDraftStatus();
@@ -799,21 +798,16 @@ async function detectCrossings(day, silent = false) {
   }
 }
 
-// Automatisch detecteren zodra de verkeersmodus opengaat zonder kruisingen.
+// Automatisch detecteren zodra de verkeersmodus opengaat zonder kruisingen,
+// of wanneer de punten nog van een oudere detectiemethode komen.
 function maybeAutoDetect() {
   const d = days[currentDay];
   if (editMode !== 'vr' || !d.path) return;
-  if ((d.crossings || []).length === 0) detectCrossings(currentDay);
-}
-
-document.getElementById('detect-btn').addEventListener('click', () => {
-  const d = days[currentDay];
-  if (!d.path) {
-    setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
-    return;
+  const crossings = d.crossings || [];
+  if (crossings.length === 0 || !crossings.some((c) => c.src === 'osm')) {
+    detectCrossings(currentDay);
   }
-  detectCrossings(currentDay);
-});
+}
 
 // Handmatig een oversteekpunt toevoegen (klik op de kaart in verkeersmodus);
 // alleen mogelijk óp de wandelroute: een klik vlak naast de route wordt op de

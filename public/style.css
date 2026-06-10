@@ -3,22 +3,26 @@
    schoolhuisstijl (syncope.asg.nl) aan te laten sluiten.
    ========================================================= */
 :root {
-  --brand: #1d4ed8;        /* hoofdkleur (header, primaire knoppen) */
-  --brand-dark: #1e40af;   /* hoverkleur van primaire knoppen */
+  /* Kleuren naar de huisstijl van o.b.s. Syncope (syncope.asg.nl):
+     teal-groene tinten, donkergrijze tekst en zachte, ronde vormen. */
+  --brand: #2ba59a;        /* hoofdkleur (primaire knoppen, accenten) */
+  --brand-dark: #228b81;   /* hoverkleur van primaire knoppen */
+  --brand-grad: linear-gradient(115deg, #3eb3a7, #76c39c); /* header, zoals de teal-groene cirkel op de schoolsite */
   --brand-contrast: #ffffff;
-  --danger: #dc2626;
-  --ink: #1f2937;          /* tekstkleur */
-  --muted: #64748b;        /* secundaire tekst */
-  --bg: #f8fafc;           /* achtergrond zijbalk */
+  --danger: #d34b4b;
+  --ink: #3b3b3b;          /* tekstkleur */
+  --muted: #6b7572;        /* secundaire tekst */
+  --bg: #f6faf9;           /* achtergrond zijbalk */
   --card: #ffffff;
-  --line: #e2e8f0;         /* randen */
-  --radius: 8px;
+  --line: #e3ecea;         /* randen */
+  --radius: 12px;          /* kaarten en invoervelden */
+  --radius-pill: 999px;    /* knoppen, zoals de pills op de schoolsite */
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: "Quicksand", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -29,7 +33,7 @@ body {
 
 /* --- Header --- */
 header {
-  background: var(--brand);
+  background: var(--brand-grad);
   color: var(--brand-contrast);
   padding: 0.65rem 1rem;
   display: flex;
@@ -48,10 +52,11 @@ header .sub { opacity: 0.8; font-size: 0.78rem; }
 #back-link {
   color: var(--brand-contrast);
   font-size: 0.85rem;
+  font-weight: 600;
   text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: var(--radius);
-  padding: 0.35rem 0.7rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.65);
+  border-radius: var(--radius-pill);
+  padding: 0.4rem 0.95rem;
   white-space: nowrap;
 }
 
@@ -91,7 +96,7 @@ main { flex: 1; display: flex; min-height: 0; }
   padding: 0.45rem 0.2rem;
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   font-weight: 600;
   font-size: 0.8rem;
@@ -100,8 +105,8 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 .day-tab.active, .mode-tab.active { color: #fff; border-color: transparent; }
-.mode-tab.active { background: #0f172a; }
-.day-tab.active[data-day="all"] { background: #0f172a; }
+.mode-tab.active { background: var(--brand); }
+.day-tab.active[data-day="all"] { background: var(--brand); }
 .day-tab.active[data-day="1"] { background: #dc2626; }
 .day-tab.active[data-day="2"] { background: #2563eb; }
 .day-tab.active[data-day="3"] { background: #16a34a; }
@@ -109,13 +114,14 @@ main { flex: 1; display: flex; min-height: 0; }
 
 /* --- Knoppen en invoer --- */
 button {
-  padding: 0.5rem 0.7rem;
+  padding: 0.5rem 0.9rem;
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: var(--radius);
+  border-radius: var(--radius-pill);
   cursor: pointer;
+  font-family: inherit;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--ink);
   transition: background 0.15s, border-color 0.15s;
 }

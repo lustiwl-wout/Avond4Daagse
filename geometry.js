@@ -90,53 +90,73 @@ function boxesOverlap(a, b) {
   );
 }
 
-// Kleinste afstand (m) van een punt tot een pad, plus de afstand langs het
-// pad van het dichtstbijzijnde punt (voor volgorde langs de route).
-function pointToPath(path, point) {
-  let best = Infinity;
-  let bestAlong = 0;
-  let cum = 0;
-  for (let i = 0; i < path.length - 1; i++) {
-    const a = path[i];
-    const b = path[i + 1];
-    const segLen = distanceM(a, b);
-    let t = 0;
-    if (segLen > 0) {
-      const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
-      const bx = (b.lng - a.lng) * Math.cos(lat0);
-      const by = b.lat - a.lat;
-      const px = (point.lng - a.lng) * Math.cos(lat0);
-      const py = point.lat - a.lat;
-      t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
-    }
-    const proj = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
-    const d = distanceM(point, proj);
-    if (d < best) {
-      best = d;
-      bestAlong = cum + segLen * t;
-    }
-    cum += segLen;
-  }
-  return { dist: best, along: bestAlong };
+const HIGHWAY_LABELS = {
+  cycleway: 'fietspad',
+  service: 'inrit / zijweg',
+  residential: 'woonstraat',
+  living_street: 'woonerf',
+  unclassified: 'weg',
+  tertiary: 'doorgaande weg',
+  tertiary_link: 'doorgaande weg',
+  secondary: 'doorgaande weg',
+  secondary_link: 'doorgaande weg',
+  primary: 'hoofdweg',
+  primary_link: 'hoofdweg',
+  trunk: 'hoofdweg',
+  trunk_link: 'hoofdweg',
+  busway: 'busbaan',
+  track: 'landweg',
+};
+
+function wayName(way) {
+  const tags = way.tags || {};
+  if (tags.name) return tags.name;
+  return HIGHWAY_LABELS[tags.highway] || 'weg';
 }
 
-// Vult een pad aan zodat opeenvolgende punten hooguit maxGap meter uit
-// elkaar liggen (voor het snappen aan het Google-wegennetwerk).
-function densifyPath(path, maxGap = 40) {
-  const out = [];
-  for (let i = 0; i < path.length - 1; i++) {
-    const a = path[i];
-    const b = path[i + 1];
-    out.push(a);
-    const gap = distanceM(a, b);
-    const extra = Math.floor(gap / maxGap);
-    for (let k = 1; k <= extra; k++) {
-      const t = k / (extra + 1);
-      out.push({ lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t });
+// Alle plekken waar het wandelpad een (fiets)weg kruist óf waar zo'n weg op
+// de gelopen straat uitkomt (T-kruising). Werkt met nabijheid + kruisingshoek
+// op OpenStreetMap-wegendata, zodat kleine verschillen tussen de Google-route
+// en de OSM-weglijnen geen gemiste kruisingen opleveren. Bijna-parallelle
+// wegen (de straat waar de stoet zelf loopt, trottoirs) tellen niet mee en
+// punten binnen clusterDist meter worden samengevoegd tot één oversteekpunt.
+function findCrossings(path, ways, { maxDist = 12, minAngle = 25, clusterDist = 30 } = {}) {
+  const boxMargin = 0.0004; // ruim genoeg voor maxDist
+  const pathBoxes = [];
+  for (let i = 0; i < path.length - 1; i++) pathBoxes.push(segBox(path[i], path[i + 1], boxMargin));
+
+  const hits = [];
+  for (const way of ways) {
+    const geom = (way.geometry || []).map((g) => ({ lat: g.lat, lng: g.lon }));
+    const name = wayName(way);
+    for (let j = 0; j < geom.length - 1; j++) {
+      const wb = segBox(geom[j], geom[j + 1], boxMargin);
+      for (let i = 0; i < path.length - 1; i++) {
+        if (!boxesOverlap(pathBoxes[i], wb)) continue;
+        const rel = segmentRelation(path[i], path[i + 1], geom[j], geom[j + 1]);
+        if (rel && rel.dist <= maxDist && rel.angle >= minAngle) {
+          hits.push({ lat: rel.lat, lng: rel.lng, order: i + rel.t, name });
+        }
+      }
     }
   }
-  out.push(path[path.length - 1]);
-  return out;
+
+  hits.sort((a, b) => a.order - b.order);
+  const clusters = [];
+  for (const h of hits) {
+    const near = clusters.find((c) => distanceM(c, h) < clusterDist);
+    if (near) {
+      if (!near.names.includes(h.name)) near.names.push(h.name);
+    } else {
+      clusters.push({ lat: h.lat, lng: h.lng, order: h.order, names: [h.name] });
+    }
+  }
+  return clusters.map((c) => ({
+    lat: c.lat,
+    lng: c.lng,
+    order: c.order,
+    name: c.names.join(' / '),
+  }));
 }
 
 // Plekken waar een teamroute de wandelroute kruist, met uitzondering van de
@@ -169,4 +189,4 @@ function findConflicts(
   return clusters;
 }
 
-module.exports = { distanceM, findConflicts, pointToPath, densifyPath };
+module.exports = { distanceM, findConflicts, findCrossings };
