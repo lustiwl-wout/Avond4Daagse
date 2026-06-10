@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beheer — Avond4Daagse Routeplanner</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🛠 Routebeheer</h1>
+    <p>Avond4Daagse · Basisschool Syncope</p>
+    <a href="/" id="back-link">← Naar de bezoekerspagina</a>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <section id="login-section">
+        <h2>Inloggen</h2>
+        <input type="password" id="admin-password" placeholder="Beheerwachtwoord" />
+        <button id="login-btn">🔑 Inloggen</button>
+        <p id="login-status" class="hint"></p>
+      </section>
+
+      <div id="editor" class="hidden">
+        <section>
+          <h2>Dag</h2>
+          <div id="day-tabs">
+            <button class="day-tab active" data-day="1">Dag 1</button>
+            <button class="day-tab" data-day="2">Dag 2</button>
+            <button class="day-tab" data-day="3">Dag 3</button>
+            <button class="day-tab" data-day="4">Dag 4</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Route tekenen</h2>
+          <p class="hint">
+            Klik op de kaart om punten toe te voegen — de route volgt automatisch
+            wandelend de straten. <strong>Sleep</strong> een punt om hem te verplaatsen,
+            <strong>klik</strong> op een punt om hem te verwijderen of er een punt
+            tussen te voegen.
+          </p>
+          <div id="route-info">
+            <span id="point-count">0 punten</span>
+            <strong id="distance">0,0 km</strong>
+          </div>
+          <div class="button-row">
+            <button id="undo-btn">↩ Laatste punt weg</button>
+            <button id="clear-btn">🗑 Wis kaart</button>
+          </div>
+        </section>
+
+        <section>
+          <h2>Opslaan</h2>
+          <button id="save-btn">💾 Opslaan als route dag 1</button>
+          <button id="delete-btn">❌ Verwijder route dag 1</button>
+          <p id="save-status" class="hint"></p>
+        </section>
+
+        <section>
+          <h2>Street View</h2>
+          <p class="hint">Sleep het gele poppetje (rechtsonder op de kaart) op de route om de straat te bekijken.</p>
+        </section>
+      </div>
+    </aside>
+
+    <div id="map-container">
+      <div id="map"></div>
+    </div>
+  </main>
+
+  <script src="admin.js"></script>
+</body>
+</html>

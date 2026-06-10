@@ -8,6 +8,8 @@ body {
   color: #1f2937;
 }
 
+.hidden { display: none !important; }
+
 header {
   background: #1d4ed8;
   color: #fff;
@@ -18,7 +20,8 @@ header {
 }
 
 header h1 { font-size: 1.2rem; }
-header p { opacity: 0.85; font-size: 0.9rem; }
+header p { opacity: 0.85; font-size: 0.9rem; flex: 1; }
+#back-link { color: #fff; opacity: 0.85; font-size: 0.85rem; }
 
 main {
   flex: 1;
@@ -37,6 +40,8 @@ main {
   gap: 1.2rem;
 }
 
+#editor { display: flex; flex-direction: column; gap: 1.2rem; }
+
 #sidebar h2 {
   font-size: 0.8rem;
   text-transform: uppercase;
@@ -51,15 +56,17 @@ main {
 
 .day-tab {
   flex: 1;
-  padding: 0.45rem 0;
+  padding: 0.45rem 0.2rem;
   border: 1px solid #cbd5e1;
   background: #fff;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 0.8rem;
 }
 
 .day-tab.active { color: #fff; border-color: transparent; }
+.day-tab.active[data-day="all"] { background: #0f172a; }
 .day-tab.active[data-day="1"] { background: #dc2626; }
 .day-tab.active[data-day="2"] { background: #2563eb; }
 .day-tab.active[data-day="3"] { background: #16a34a; }
@@ -91,57 +98,71 @@ button {
 
 button:hover { background: #f1f5f9; }
 
-#save-btn, #streetview-btn { width: 100%; margin-top: 0.4rem; }
+#save-btn, #delete-btn, #login-btn, #gps-start, #gps-stop {
+  width: 100%;
+  margin-top: 0.4rem;
+}
 
-#save-btn { background: #1d4ed8; color: #fff; border-color: transparent; }
-#save-btn:hover { background: #1e40af; }
+#save-btn, #login-btn, #gps-start { background: #1d4ed8; color: #fff; border-color: transparent; }
+#save-btn:hover, #login-btn:hover, #gps-start:hover { background: #1e40af; }
 
-#route-name {
+#gps-stop { background: #dc2626; color: #fff; border-color: transparent; }
+#gps-stop:hover { background: #b91c1c; }
+
+#delete-btn { color: #dc2626; }
+
+#admin-password {
   width: 100%;
   padding: 0.5rem;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
 }
 
-#route-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+#follow-label {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
 
-#route-list li {
+#distance-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
+
+#distance-list li {
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 6px;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.85rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 0.4rem;
 }
 
-#route-list .route-meta { color: #64748b; font-size: 0.75rem; }
-#route-list button { padding: 0.2rem 0.45rem; font-size: 0.75rem; }
+.day-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+}
+
+.point-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.2rem;
+}
+
+.point-menu button { font-size: 0.8rem; }
 
 #map-container { flex: 1; position: relative; min-width: 0; }
 #map { width: 100%; height: 100%; }
 
-#streetview {
-  position: absolute;
-  inset: 0;
-  background: #000;
-  z-index: 10;
-}
-
-#streetview.hidden { display: none; }
-#pano { width: 100%; height: 100%; }
-
-#close-streetview {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 11;
-  background: #fff;
-}
-
 @media (max-width: 720px) {
   main { flex-direction: column; }
-  #sidebar { width: 100%; max-height: 45vh; }
+  #sidebar {
+    width: 100%;
+    max-height: 45vh;
+    border-right: none;
+    border-bottom: 1px solid #e2e8f0;
+  }
 }

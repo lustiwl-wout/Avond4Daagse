@@ -1,15 +1,17 @@
+// Bezoekerspagina: toont de routes van dag 1 t/m 4 en volgt je met GPS.
 // Startpunt: Almere (pas SCHOOL_LOCATION aan naar het exacte adres van de school).
 const SCHOOL_LOCATION = { lat: 52.3508, lng: 5.2647 };
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
-const MAX_POINTS = 27; // Directions API: origin + bestemming + 25 tussenpunten
 
 let map;
-let panorama;
-let directionsService;
-let currentDay = 1;
+let selectedDay = 'all';
+const routes = {}; // day -> { polyline, startMarker, bounds, distance_m }
 
-// Per dag: { points: [{lat, lng}], markers: [], renderer, distanceM }
-const days = {};
+// GPS-status
+let watchId = null;
+let posMarker = null;
+let accuracyCircle = null;
+let firstFix = true;
 
 async function loadGoogleMaps() {
   const res = await fetch('/api/config');
@@ -25,258 +27,186 @@ async function loadGoogleMaps() {
   document.head.appendChild(script);
 }
 
-window.initMap = function () {
+window.initMap = async function () {
   map = new google.maps.Map(document.getElementById('map'), {
     center: SCHOOL_LOCATION,
-    zoom: 14,
+    zoom: 13,
     streetViewControl: true, // het gele poppetje voor Street View
-    mapTypeControl: true,
-    fullscreenControl: false,
+    mapTypeControl: false,
+    fullscreenControl: true,
   });
-
-  panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'));
-
-  directionsService = new google.maps.DirectionsService();
-
-  for (let day = 1; day <= 4; day++) {
-    days[day] = {
-      points: [],
-      markers: [],
-      distanceM: 0,
-      renderer: new google.maps.DirectionsRenderer({
-        map,
-        suppressMarkers: true,
-        preserveViewport: true,
-        polylineOptions: { strokeColor: DAY_COLORS[day], strokeWeight: 5, strokeOpacity: 0.8 },
-      }),
-    };
-  }
-
-  map.addListener('click', (e) => {
-    addPoint(currentDay, { lat: e.latLng.lat(), lng: e.latLng.lng() });
-  });
-
-  loadRouteList();
+  await loadRoutes();
 };
 
-function addPoint(day, point) {
-  const d = days[day];
-  if (d.points.length >= MAX_POINTS) {
-    alert(`Maximaal ${MAX_POINTS} punten per route.`);
+async function loadRoutes() {
+  const list = document.getElementById('distance-list');
+  let rows = [];
+  try {
+    const res = await fetch('/api/routes');
+    if (!res.ok) throw new Error();
+    rows = await res.json();
+  } catch {
+    list.innerHTML = '<li class="hint">⚠️ Routes laden mislukt.</li>';
     return;
   }
-  d.points.push(point);
-  addMarker(day, point, d.points.length - 1);
-  updateRoute(day);
-}
 
-function addMarker(day, point, index) {
-  const d = days[day];
-  const marker = new google.maps.Marker({
-    position: point,
-    map,
-    draggable: true,
-    label: { text: String(index + 1), color: '#fff', fontSize: '11px' },
-    icon: {
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: 10,
-      fillColor: DAY_COLORS[day],
-      fillOpacity: 1,
-      strokeColor: '#fff',
-      strokeWeight: 2,
-    },
-  });
-  marker.addListener('dragend', () => {
-    d.points[d.markers.indexOf(marker)] = {
-      lat: marker.getPosition().lat(),
-      lng: marker.getPosition().lng(),
-    };
-    updateRoute(day);
-  });
-  marker.addListener('rightclick', () => {
-    const i = d.markers.indexOf(marker);
-    d.points.splice(i, 1);
-    marker.setMap(null);
-    d.markers.splice(i, 1);
-    relabelMarkers(day);
-    updateRoute(day);
-  });
-  d.markers.push(marker);
-}
-
-function relabelMarkers(day) {
-  days[day].markers.forEach((m, i) =>
-    m.setLabel({ text: String(i + 1), color: '#fff', fontSize: '11px' })
-  );
-}
-
-function updateRoute(day) {
-  const d = days[day];
-  if (d.points.length < 2) {
-    d.renderer.setDirections({ routes: [] });
-    d.distanceM = 0;
-    updateInfo();
-    return;
+  for (const row of rows) {
+    const path = (row.path && row.path.length > 1 ? row.path : row.waypoints) || [];
+    if (path.length < 2) continue;
+    const polyline = new google.maps.Polyline({
+      path,
+      map,
+      strokeColor: DAY_COLORS[row.day],
+      strokeWeight: 5,
+      strokeOpacity: 0.85,
+    });
+    const bounds = new google.maps.LatLngBounds();
+    path.forEach((p) => bounds.extend(p));
+    const startMarker = new google.maps.Marker({
+      position: path[0],
+      map,
+      title: `Start dag ${row.day}`,
+      label: { text: String(row.day), color: '#fff', fontSize: '12px', fontWeight: 'bold' },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 12,
+        fillColor: DAY_COLORS[row.day],
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 2,
+      },
+    });
+    routes[row.day] = { polyline, startMarker, bounds, distance_m: row.distance_m };
   }
-  directionsService.route(
-    {
-      origin: d.points[0],
-      destination: d.points[d.points.length - 1],
-      waypoints: d.points.slice(1, -1).map((p) => ({ location: p, stopover: false })),
-      travelMode: google.maps.TravelMode.WALKING,
-    },
-    (result, status) => {
-      if (status === 'OK') {
-        d.renderer.setDirections(result);
-        d.distanceM = result.routes[0].legs.reduce((sum, leg) => sum + leg.distance.value, 0);
-      } else {
-        console.error('Directions mislukt:', status);
-        d.distanceM = 0;
-      }
-      updateInfo();
+
+  renderDistanceList();
+  applySelection();
+}
+
+function renderDistanceList() {
+  const list = document.getElementById('distance-list');
+  list.innerHTML = '';
+  for (let day = 1; day <= 4; day++) {
+    const li = document.createElement('li');
+    const km = routes[day] && routes[day].distance_m
+      ? (routes[day].distance_m / 1000).toFixed(1).replace('.', ',') + ' km'
+      : 'nog geen route';
+    li.innerHTML = `<span><span class="day-dot" style="background:${DAY_COLORS[day]}"></span>Dag ${day}</span><strong>${km}</strong>`;
+    list.appendChild(li);
+  }
+}
+
+function applySelection() {
+  const showAll = selectedDay === 'all';
+  const union = new google.maps.LatLngBounds();
+  let any = false;
+  for (let day = 1; day <= 4; day++) {
+    const r = routes[day];
+    if (!r) continue;
+    const visible = showAll || Number(selectedDay) === day;
+    r.polyline.setMap(visible ? map : null);
+    r.startMarker.setMap(visible ? map : null);
+    if (visible) {
+      union.union(r.bounds);
+      any = true;
     }
-  );
+  }
+  if (any) map.fitBounds(union, 40);
 }
 
-function updateInfo() {
-  const d = days[currentDay];
-  document.getElementById('point-count').textContent = `${d.points.length} punten`;
-  document.getElementById('distance').textContent =
-    (d.distanceM / 1000).toFixed(1).replace('.', ',') + ' km';
-}
-
-function clearDay(day) {
-  const d = days[day];
-  d.points = [];
-  d.markers.forEach((m) => m.setMap(null));
-  d.markers = [];
-  d.distanceM = 0;
-  d.renderer.setDirections({ routes: [] });
-  updateInfo();
-}
-
-// --- UI: dagen ---
 document.querySelectorAll('.day-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     document.querySelector('.day-tab.active').classList.remove('active');
     tab.classList.add('active');
-    currentDay = Number(tab.dataset.day);
-    updateInfo();
+    selectedDay = tab.dataset.day;
+    applySelection();
   });
 });
 
-document.getElementById('undo-btn').addEventListener('click', () => {
-  const d = days[currentDay];
-  if (d.points.length === 0) return;
-  d.points.pop();
-  d.markers.pop().setMap(null);
-  updateRoute(currentDay);
-});
+// --- GPS ---
+const gpsStartBtn = document.getElementById('gps-start');
+const gpsStopBtn = document.getElementById('gps-stop');
+const followLabel = document.getElementById('follow-label');
+const gpsStatus = document.getElementById('gps-status');
 
-document.getElementById('clear-btn').addEventListener('click', () => clearDay(currentDay));
-
-// --- Street View ---
-document.getElementById('streetview-btn').addEventListener('click', () => {
-  const d = days[currentDay];
-  if (d.points.length === 0) {
-    alert('Zet eerst een punt op de kaart.');
+gpsStartBtn.addEventListener('click', () => {
+  if (!navigator.geolocation) {
+    gpsStatus.textContent = '⚠️ GPS wordt niet ondersteund door deze browser.';
     return;
   }
-  panorama.setPosition(d.points[d.points.length - 1]);
-  document.getElementById('streetview').classList.remove('hidden');
-});
-
-document.getElementById('close-streetview').addEventListener('click', () => {
-  document.getElementById('streetview').classList.add('hidden');
-});
-
-// --- Opslaan & laden ---
-function setSaveStatus(text) {
-  document.getElementById('save-status').textContent = text;
-  setTimeout(() => (document.getElementById('save-status').textContent = ''), 4000);
-}
-
-document.getElementById('save-btn').addEventListener('click', async () => {
-  const d = days[currentDay];
-  const name = document.getElementById('route-name').value.trim();
-  if (!name) return setSaveStatus('Geef de route eerst een naam.');
-  if (d.points.length < 2) return setSaveStatus('Een route heeft minimaal 2 punten nodig.');
-
-  const res = await fetch('/api/routes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name,
-      day: currentDay,
-      waypoints: d.points,
-      distance_m: d.distanceM,
-    }),
+  firstFix = true;
+  gpsStatus.textContent = 'GPS zoeken…';
+  watchId = navigator.geolocation.watchPosition(onPosition, onGpsError, {
+    enableHighAccuracy: true,
+    maximumAge: 2000,
+    timeout: 15000,
   });
-  if (res.ok) {
-    setSaveStatus('✅ Opgeslagen!');
-    document.getElementById('route-name').value = '';
-    loadRouteList();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    setSaveStatus('⚠️ ' + (err.error || 'Opslaan mislukt.'));
-  }
+  gpsStartBtn.classList.add('hidden');
+  gpsStopBtn.classList.remove('hidden');
+  followLabel.classList.remove('hidden');
 });
 
-async function loadRouteList() {
-  const list = document.getElementById('route-list');
-  try {
-    const res = await fetch('/api/routes');
-    if (!res.ok) throw new Error();
-    const routes = await res.json();
-    list.innerHTML = '';
-    if (routes.length === 0) {
-      list.innerHTML = '<li class="hint">Nog geen routes opgeslagen.</li>';
-      return;
-    }
-    for (const route of routes) {
-      const li = document.createElement('li');
-      const km = route.distance_m ? (route.distance_m / 1000).toFixed(1).replace('.', ',') : '?';
-      li.innerHTML = `<span>${escapeHtml(route.name)}<br>
-        <span class="route-meta">Dag ${route.day} · ${km} km</span></span>`;
-      const loadBtn = document.createElement('button');
-      loadBtn.textContent = '📂';
-      loadBtn.title = 'Route laden';
-      loadBtn.addEventListener('click', () => loadRoute(route));
-      const delBtn = document.createElement('button');
-      delBtn.textContent = '🗑';
-      delBtn.title = 'Route verwijderen';
-      delBtn.addEventListener('click', async () => {
-        if (!confirm(`"${route.name}" verwijderen?`)) return;
-        await fetch(`/api/routes/${route.id}`, { method: 'DELETE' });
-        loadRouteList();
-      });
-      const btns = document.createElement('span');
-      btns.append(loadBtn, delBtn);
-      li.appendChild(btns);
-      list.appendChild(li);
-    }
-  } catch {
-    list.innerHTML = '<li class="hint">⚠️ Routes laden mislukt (database geconfigureerd?).</li>';
-  }
+gpsStopBtn.addEventListener('click', stopGps);
+
+function stopGps() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+  if (posMarker) posMarker.setMap(null);
+  if (accuracyCircle) accuracyCircle.setMap(null);
+  posMarker = null;
+  accuracyCircle = null;
+  gpsStatus.textContent = '';
+  gpsStartBtn.classList.remove('hidden');
+  gpsStopBtn.classList.add('hidden');
+  followLabel.classList.add('hidden');
 }
 
-function loadRoute(route) {
-  clearDay(route.day);
-  currentDay = route.day;
-  document.querySelector('.day-tab.active').classList.remove('active');
-  document.querySelector(`.day-tab[data-day="${route.day}"]`).classList.add('active');
-  for (const p of route.waypoints) {
-    days[route.day].points.push(p);
-    addMarker(route.day, p, days[route.day].points.length - 1);
+function onPosition(position) {
+  const pos = { lat: position.coords.latitude, lng: position.coords.longitude };
+  if (!posMarker) {
+    posMarker = new google.maps.Marker({
+      position: pos,
+      map,
+      title: 'Jouw locatie',
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 9,
+        fillColor: '#4285F4',
+        fillOpacity: 1,
+        strokeColor: '#fff',
+        strokeWeight: 3,
+      },
+      zIndex: 1000,
+    });
+    accuracyCircle = new google.maps.Circle({
+      map,
+      fillColor: '#4285F4',
+      fillOpacity: 0.12,
+      strokeColor: '#4285F4',
+      strokeOpacity: 0.3,
+      strokeWeight: 1,
+    });
   }
-  updateRoute(route.day);
-  map.panTo(route.waypoints[0]);
+  posMarker.setPosition(pos);
+  accuracyCircle.setCenter(pos);
+  accuracyCircle.setRadius(position.coords.accuracy);
+  gpsStatus.textContent = `Nauwkeurigheid: ±${Math.round(position.coords.accuracy)} m`;
+
+  if (document.getElementById('follow-me').checked) {
+    map.panTo(pos);
+    if (firstFix) map.setZoom(16);
+  }
+  firstFix = false;
 }
 
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
+function onGpsError(err) {
+  const messages = {
+    1: '⚠️ Geen toestemming voor locatie. Sta locatietoegang toe in je browser.',
+    2: '⚠️ Locatie niet beschikbaar.',
+    3: '⚠️ GPS duurt te lang, opnieuw aan het proberen…',
+  };
+  gpsStatus.textContent = messages[err.code] || '⚠️ GPS-fout.';
+  if (err.code === 1) stopGps();
 }
 
 loadGoogleMaps();
