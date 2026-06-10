@@ -14,9 +14,10 @@ function distanceM(a, b) {
   return Math.hypot(pa.x - pb.x, pa.y - pb.y);
 }
 
-// Snijpunt van segment a1-a2 met b1-b2, of null. Geeft ook de kruisingshoek
-// (0-90°) terug zodat bijna-parallelle "kruisingen" genegeerd kunnen worden.
-function segmentIntersection(a1, a2, b1, b2) {
+// Relatie tussen twee segmenten: kruisen ze, of hoe dichtbij komen ze?
+// Geeft het punt op segment A (het wandelpad) terug dat het dichtst bij
+// segment B (de weg) ligt, met de onderlinge hoek (0-90°).
+function segmentRelation(a1, a2, b1, b2) {
   const lat0 = (a1.lat + a2.lat + b1.lat + b2.lat) / 4;
   const p1 = project(a1, lat0);
   const p2 = project(a2, lat0);
@@ -26,21 +27,52 @@ function segmentIntersection(a1, a2, b1, b2) {
   const d1y = p2.y - p1.y;
   const d2x = p4.x - p3.x;
   const d2y = p4.y - p3.y;
-  const denom = d1x * d2y - d1y * d2x;
-  if (Math.abs(denom) < 1e-9) return null;
-  const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
-  const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
-  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
   const len = Math.hypot(d1x, d1y) * Math.hypot(d2x, d2y);
   if (len === 0) return null;
   const dot = d1x * d2x + d1y * d2y;
   const angle = (Math.acos(Math.min(1, Math.abs(dot) / len)) * 180) / Math.PI;
-  return {
+
+  const atPoint = (t) => ({
     lat: a1.lat + (a2.lat - a1.lat) * t,
     lng: a1.lng + (a2.lng - a1.lng) * t,
-    t,
-    angle,
+  });
+
+  // Echte kruising?
+  const denom = d1x * d2y - d1y * d2x;
+  if (Math.abs(denom) > 1e-9) {
+    const t = ((p3.x - p1.x) * d2y - (p3.y - p1.y) * d2x) / denom;
+    const u = ((p3.x - p1.x) * d1y - (p3.y - p1.y) * d1x) / denom;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
+      return { dist: 0, t, angle, ...atPoint(t) };
+    }
+  }
+
+  // Geen kruising: kleinste afstand tussen de segmenten, bijv. een zijstraat
+  // die op de gelopen weg uitkomt (T-kruising).
+  const lenA2 = d1x * d1x + d1y * d1y;
+  const lenB2 = d2x * d2x + d2y * d2y;
+  let best = null;
+  const consider = (dist, t) => {
+    if (!best || dist < best.dist) best = { dist, t };
   };
+  for (const p of [p3, p4]) {
+    const t = lenA2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - p1.x) * d1x + (p.y - p1.y) * d1y) / lenA2));
+    const q = { x: p1.x + d1x * t, y: p1.y + d1y * t };
+    consider(Math.hypot(p.x - q.x, p.y - q.y), t);
+  }
+  for (const [p, t] of [[p1, 0], [p2, 1]]) {
+    const u = lenB2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - p3.x) * d2x + (p.y - p3.y) * d2y) / lenB2));
+    const q = { x: p3.x + d2x * u, y: p3.y + d2y * u };
+    consider(Math.hypot(p.x - q.x, p.y - q.y), t);
+  }
+  return { dist: best.dist, t: best.t, angle, ...atPoint(best.t) };
+}
+
+// Snijpunt van segment a1-a2 met b1-b2, of null (alleen echte kruisingen,
+// gebruikt voor de conflictcontrole van teamroutes).
+function segmentIntersection(a1, a2, b1, b2) {
+  const rel = segmentRelation(a1, a2, b1, b2);
+  return rel && rel.dist === 0 ? rel : null;
 }
 
 function segBox(a, b, margin = 0.0003) {
@@ -58,68 +90,53 @@ function boxesOverlap(a, b) {
   );
 }
 
-const HIGHWAY_LABELS = {
-  cycleway: 'fietspad',
-  service: 'inrit / zijweg',
-  residential: 'woonstraat',
-  living_street: 'woonerf',
-  unclassified: 'weg',
-  tertiary: 'doorgaande weg',
-  tertiary_link: 'doorgaande weg',
-  secondary: 'doorgaande weg',
-  secondary_link: 'doorgaande weg',
-  primary: 'hoofdweg',
-  primary_link: 'hoofdweg',
-  trunk: 'hoofdweg',
-  trunk_link: 'hoofdweg',
-  busway: 'busbaan',
-  track: 'landweg',
-};
-
-function wayName(way) {
-  const tags = way.tags || {};
-  if (tags.name) return tags.name;
-  return HIGHWAY_LABELS[tags.highway] || 'weg';
+// Kleinste afstand (m) van een punt tot een pad, plus de afstand langs het
+// pad van het dichtstbijzijnde punt (voor volgorde langs de route).
+function pointToPath(path, point) {
+  let best = Infinity;
+  let bestAlong = 0;
+  let cum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const segLen = distanceM(a, b);
+    let t = 0;
+    if (segLen > 0) {
+      const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+      const bx = (b.lng - a.lng) * Math.cos(lat0);
+      const by = b.lat - a.lat;
+      const px = (point.lng - a.lng) * Math.cos(lat0);
+      const py = point.lat - a.lat;
+      t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
+    }
+    const proj = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    const d = distanceM(point, proj);
+    if (d < best) {
+      best = d;
+      bestAlong = cum + segLen * t;
+    }
+    cum += segLen;
+  }
+  return { dist: best, along: bestAlong };
 }
 
-// Alle plekken waar het wandelpad een (fiets)weg transversaal kruist.
-// Punten binnen clusterDist meter worden samengevoegd tot één oversteekpunt.
-function findCrossings(path, ways, { minAngle = 20, clusterDist = 25 } = {}) {
-  const pathBoxes = [];
-  for (let i = 0; i < path.length - 1; i++) pathBoxes.push(segBox(path[i], path[i + 1]));
-
-  const hits = [];
-  for (const way of ways) {
-    const geom = (way.geometry || []).map((g) => ({ lat: g.lat, lng: g.lon }));
-    const name = wayName(way);
-    for (let j = 0; j < geom.length - 1; j++) {
-      const wb = segBox(geom[j], geom[j + 1]);
-      for (let i = 0; i < path.length - 1; i++) {
-        if (!boxesOverlap(pathBoxes[i], wb)) continue;
-        const hit = segmentIntersection(path[i], path[i + 1], geom[j], geom[j + 1]);
-        if (hit && hit.angle >= minAngle) {
-          hits.push({ lat: hit.lat, lng: hit.lng, order: i + hit.t, name });
-        }
-      }
+// Vult een pad aan zodat opeenvolgende punten hooguit maxGap meter uit
+// elkaar liggen (voor het snappen aan het Google-wegennetwerk).
+function densifyPath(path, maxGap = 40) {
+  const out = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    out.push(a);
+    const gap = distanceM(a, b);
+    const extra = Math.floor(gap / maxGap);
+    for (let k = 1; k <= extra; k++) {
+      const t = k / (extra + 1);
+      out.push({ lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t });
     }
   }
-
-  hits.sort((a, b) => a.order - b.order);
-  const clusters = [];
-  for (const h of hits) {
-    const near = clusters.find((c) => distanceM(c, h) < clusterDist);
-    if (near) {
-      if (!near.names.includes(h.name)) near.names.push(h.name);
-    } else {
-      clusters.push({ lat: h.lat, lng: h.lng, order: h.order, names: [h.name] });
-    }
-  }
-  return clusters.map((c) => ({
-    lat: c.lat,
-    lng: c.lng,
-    order: c.order,
-    name: c.names.join(' / '),
-  }));
+  out.push(path[path.length - 1]);
+  return out;
 }
 
 // Plekken waar een teamroute de wandelroute kruist, met uitzondering van de
@@ -152,4 +169,4 @@ function findConflicts(
   return clusters;
 }
 
-module.exports = { distanceM, findCrossings, findConflicts };
+module.exports = { distanceM, findConflicts, pointToPath, densifyPath };

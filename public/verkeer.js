@@ -140,10 +140,14 @@ function refreshView() {
 
   const route = walkRoutes[selectedDay];
   if (!route) {
+    warningEl.textContent = 'Er is nog geen route voor deze dag.';
     renderSchedule(null);
     return;
   }
   map.fitBounds(route.bounds, 40);
+  if (route.crossings.length === 0) {
+    warningEl.textContent = 'Er zijn nog geen oversteekpunten gepubliceerd voor deze dag.';
+  }
 
   const teamFilter = selectedTeam === 'all' ? null : Number(selectedTeam);
 

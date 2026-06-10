@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { distanceM, findCrossings, findConflicts } = require('./geometry');
+const { distanceM, findConflicts, pointToPath, densifyPath } = require('./geometry');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -265,48 +265,64 @@ app.delete('/api/routes/:day', async (req, res) => {
 
 // --- Verkeersregelaars: kruisingdetectie, teams en teamroutes ---
 
-// Wegtypen waar verkeer kan rijden (auto's, fietsen, bussen).
-const HIGHWAY_FILTER =
-  '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|' +
-  'tertiary|tertiary_link|unclassified|residential|living_street|service|busway|cycleway|track)$';
+// Server-side Google-key (zonder website-restrictie) voor de Roads API en
+// Geocoding API. Dit is een ándere key dan GOOGLE_MAPS_API_KEY (de browser-key).
+const SERVER_KEY = process.env.GOOGLE_MAPS_SERVER_KEY || '';
 
-// Admin: detecteer alle oversteekpunten van de wandelroute met wegen en
-// fietspaden (wegendata via OpenStreetMap/Overpass). Eerder verborgen punten
-// en teamtoewijzingen blijven behouden op basis van nabijheid.
+// Snapt een reeks punten aan het wegennetwerk van Google (Roads API).
+// Maximaal 100 punten per aanroep, dus in delen met 1 punt overlap.
+async function snapToRoads(points) {
+  const snapped = [];
+  for (let start = 0; start < points.length - 1; start += 99) {
+    const batch = points.slice(start, start + 100);
+    const pathParam = batch.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join('|');
+    const url =
+      'https://roads.googleapis.com/v1/snapToRoads?interpolate=true' +
+      `&path=${encodeURIComponent(pathParam)}&key=${SERVER_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      throw new Error((data.error && data.error.message) || `Roads API gaf status ${resp.status}`);
+    }
+    snapped.push(...(data.snappedPoints || []));
+  }
+  return snapped;
+}
+
+// Straatnaam bij een punt via de Google Geocoding API.
+async function reverseStreetName(p) {
+  const url =
+    'https://maps.googleapis.com/maps/api/geocode/json' +
+    `?latlng=${p.lat},${p.lng}&language=nl&key=${SERVER_KEY}`;
+  const resp = await fetch(url);
+  const data = await resp.json();
+  const result = (data.results || [])[0];
+  if (!result) return 'kruising';
+  const route = result.address_components.find((c) => c.types.includes('route'));
+  return route ? route.long_name : result.formatted_address.split(',')[0];
+}
+
+// Admin: detecteer alle kruisingen langs de wandelroute, volledig via Google.
+// De route wordt gesnapt aan Googles wegennetwerk (Roads API); elk punt waar
+// het wegsegment-ID wisselt is een knooppunt met een andere weg. Namen komen
+// van de Google Geocoding API. Eerder verborgen punten, teamtoewijzingen en
+// handmatig toegevoegde punten blijven behouden.
 app.post('/api/admin/crossings/:day', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
   const day = parseDay(req, res);
   if (day === null) return;
+  if (!SERVER_KEY) {
+    return res.status(503).json({
+      error:
+        'GOOGLE_MAPS_SERVER_KEY is niet ingesteld. Maak in Google Cloud een tweede (server-)key aan met Roads API + Geocoding API en zet die als omgevingsvariabele.',
+    });
+  }
   const { path: walkPath } = req.body;
   if (!Array.isArray(walkPath) || walkPath.length < 2 || !walkPath.every(isValidLatLng)) {
     return res.status(400).json({ error: 'Geen routepad meegestuurd. Teken eerst de route.' });
   }
   try {
-    const margin = 0.0015;
-    const lats = walkPath.map((p) => p.lat);
-    const lngs = walkPath.map((p) => p.lng);
-    const bbox = [
-      Math.min(...lats) - margin,
-      Math.min(...lngs) - margin,
-      Math.max(...lats) + margin,
-      Math.max(...lngs) + margin,
-    ].join(',');
-    const query = `[out:json][timeout:25];way["highway"~"${HIGHWAY_FILTER}"](${bbox});out geom;`;
-    const overpass = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'data=' + encodeURIComponent(query),
-    });
-    if (!overpass.ok) {
-      return res
-        .status(502)
-        .json({ error: 'Wegendata ophalen mislukt (Overpass). Probeer het over een minuut opnieuw.' });
-    }
-    const osm = await overpass.json();
-    const ways = (osm.elements || []).filter((e) => e.type === 'way' && e.geometry);
-    const detected = findCrossings(walkPath, ways);
-
     const { rows: existingRows } = await pool.query(
       'SELECT crossings FROM day_routes WHERE day = $1',
       [day]
@@ -315,25 +331,54 @@ app.post('/api/admin/crossings/:day', async (req, res) => {
       return res.status(404).json({ error: 'Sla eerst de route van deze dag op.' });
     }
     const existing = existingRows[0].crossings || [];
-    const crossings = detected.map((c) => {
-      const match = existing.find((e) => distanceM(e, c) < 20);
-      return {
+
+    const snapped = await snapToRoads(densifyPath(walkPath, 40));
+
+    // Overgang naar een ander wegsegment = knooppunt/kruising.
+    const junctions = [];
+    for (let i = 1; i < snapped.length; i++) {
+      if (!snapped[i].placeId || snapped[i].placeId === snapped[i - 1].placeId) continue;
+      const a = snapped[i - 1].location;
+      const b = snapped[i].location;
+      const point = { lat: (a.latitude + b.latitude) / 2, lng: (a.longitude + b.longitude) / 2 };
+      const onPath = pointToPath(walkPath, point);
+      if (onPath.dist > 30) continue; // ver van de route gesnapt: overslaan
+      junctions.push({ ...point, along: onPath.along });
+    }
+
+    // Knooppunten binnen 30 m samenvoegen tot één oversteekpunt.
+    junctions.sort((a, b) => a.along - b.along);
+    const clusters = [];
+    for (const j of junctions) {
+      if (!clusters.some((c) => distanceM(c, j) < 30)) clusters.push(j);
+    }
+
+    const crossings = [];
+    for (const c of clusters) {
+      const match = existing.find((e) => distanceM(e, c) < 25);
+      crossings.push({
         id: `${Math.round(c.lat * 1e5)}x${Math.round(c.lng * 1e5)}`,
         lat: c.lat,
         lng: c.lng,
-        name: c.name,
+        name: match && match.name ? match.name : await reverseStreetName(c),
         hidden: match ? !!match.hidden : false,
         team: match && match.team != null ? match.team : null,
-      };
-    });
+      });
+    }
+    // Handmatig toegevoegde punten blijven altijd staan (tenzij er nu een
+    // gedetecteerd punt vlakbij ligt).
+    for (const e of existing) {
+      if (e.manual && !crossings.some((c) => distanceM(c, e) < 25)) crossings.push(e);
+    }
+
     await pool.query('UPDATE day_routes SET crossings = $1, updated_at = now() WHERE day = $2', [
       JSON.stringify(crossings),
       day,
     ]);
     res.json(crossings);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Kruisingen detecteren mislukt.' });
+    console.error('Kruisingdetectie mislukt:', err);
+    res.status(502).json({ error: `Kruisingen detecteren mislukt: ${err.message}` });
   }
 });
 

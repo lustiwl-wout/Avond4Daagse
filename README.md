@@ -24,8 +24,8 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 **In de admin** (`/admin` → modus "🦺 Verkeersregelaars"):
 
-- **Kruisingen detecteren**: vindt automatisch alle plekken waar de wandelroute een weg of fietspad kruist (wegendata via OpenStreetMap). De punten verschijnen als genummerde ruitjes op de kaart.
-- Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen.
+- **Kruisingen detecteren** (automatisch na het opslaan van een route): de route wordt gesnapt aan het wegennetwerk van Google (**Roads API**); elk punt waar het wegsegment wisselt is een kruising/knooppunt. Straatnamen komen van de **Google Geocoding API**. De punten verschijnen als genummerde ruitjes op de kaart.
+- Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen. Klik op de kaart om **zelf een extra punt toe te voegen** (blijft staan bij herdetectie).
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
 - **Automatisch plannen**: verdeelt de punten over de teams in haasje-over-volgorde, rekening houdend met de tijden (zie hieronder).
 - **Teamroutes berekenen**: per team de fietsroute 🏁 → eigen posten → 🏁 als stippellijn, met twee controles:
@@ -45,18 +45,20 @@ export $(grep -v '^#' .env | xargs)
 npm start              # http://localhost:3000
 ```
 
-## Stap 1 — Google Maps API-key
+## Stap 1 — Google Maps API-keys (twee stuks)
 
 1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project aan.
-2. Schakel onder **APIs & Services → Library** deze vijf API's in:
+2. Schakel onder **APIs & Services → Library** deze zes API's in:
    - **Maps JavaScript API** (kaart + Street View)
    - **Directions API** (wandel- en fietsroutes over straten)
-   - **Geocoding API** (start/finish-adres opzoeken en adressen op de printversie)
+   - **Geocoding API** (adressen en straatnamen)
    - **Maps Static API** (kaartafbeeldingen op de printversie)
    - **Street View Static API** (Street View-foto's op de printversie)
-3. Maak onder **Credentials** een API-key aan.
-4. Belangrijk: beperk de key onder *Application restrictions* tot je website-URL (HTTP referrers), bijv. `https://jouw-app.onrender.com/*`, en onder *API restrictions* tot de vijf bovenstaande API's — de key is zichtbaar in de browser.
-5. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
+   - **Roads API** (kruisingdetectie via het wegennetwerk van Google)
+3. Maak onder **Credentials** twee API-keys aan:
+   - **Browser-key** (`GOOGLE_MAPS_API_KEY`): *Application restrictions* → Websites → `https://jouw-app.onrender.com/*`; *API restrictions* → Maps JavaScript, Directions, Geocoding, Maps Static, Street View Static.
+   - **Server-key** (`GOOGLE_MAPS_SERVER_KEY`): *Application restrictions* → **None** (de server roept Google rechtstreeks aan; een website-restrictie zou dit blokkeren); *API restrictions* → **Roads API + Geocoding API**. Deze key staat alleen op de server en is nooit zichtbaar in de browser.
+4. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
 
 ## Stap 2 — Neon database
 
@@ -71,7 +73,8 @@ npm start              # http://localhost:3000
 2. Ga naar [render.com](https://render.com) → **New → Web Service** en koppel de repository (of gebruik **New → Blueprint**, dan wordt `render.yaml` automatisch gelezen).
 3. Zet bij **Environment Variables**:
    - `DATABASE_URL` = je Neon-connectiestring
-   - `GOOGLE_MAPS_API_KEY` = je Google Maps API-key
+   - `GOOGLE_MAPS_API_KEY` = je browser-key
+   - `GOOGLE_MAPS_SERVER_KEY` = je server-key (Roads + Geocoding)
    - `ADMIN_PASSWORD` = zelfgekozen wachtwoord voor `/admin`
 4. Deploy — klaar! 🎉
 

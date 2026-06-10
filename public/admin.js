@@ -76,9 +76,11 @@ window.initMap = function () {
   }
 
   map.addListener('click', (e) => {
-    if (!loggedIn || editMode !== 'route') return;
+    if (!loggedIn) return;
     infoWindow.close();
-    addPoint(currentDay, { lat: e.latLng.lat(), lng: e.latLng.lng() });
+    const point = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+    if (editMode === 'route') addPoint(currentDay, point);
+    else if (editMode === 'vr') addManualCrossing(point);
   });
 
   if (password) tryLogin(password);
@@ -396,7 +398,7 @@ function clearDay(day) {
 function updateDayLabels() {
   document.getElementById('save-btn').textContent = `💾 Opslaan als route dag ${currentDay}`;
   document.getElementById('delete-btn').textContent = `❌ Verwijder route dag ${currentDay}`;
-  document.getElementById('detect-btn').textContent = `🔍 Detecteer kruisingen dag ${currentDay}`;
+  document.getElementById('detect-btn').textContent = `🔄 Detecteer opnieuw dag ${currentDay}`;
   document.getElementById('autoplan-btn').textContent = `🪄 Plan teams automatisch dag ${currentDay}`;
   document.getElementById('team-routes-btn').textContent = `🧭 Bereken teamroutes dag ${currentDay}`;
   document.getElementById('print-btn').textContent = `🖨 Printversie dag ${currentDay}`;
@@ -411,6 +413,7 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     updateDayLabels();
     updateInfo();
     refreshVrLayer();
+    maybeAutoDetect();
   });
 });
 
@@ -429,6 +432,7 @@ function setEditMode(m) {
     days[day].markers.forEach((mk) => mk.setMap(m === 'vr' ? null : map));
   }
   refreshVrLayer();
+  maybeAutoDetect();
 }
 
 document.getElementById('mode-route').addEventListener('click', () => setEditMode('route'));
@@ -488,6 +492,9 @@ async function saveCurrentDay() {
   });
   if (res.ok) {
     setSaveStatus(`✅ Route dag ${currentDay} opgeslagen!`);
+    // Route gewijzigd: oversteekpunten op de achtergrond opnieuw detecteren
+    // (verborgen punten en teamtoewijzingen blijven behouden).
+    detectCrossings(currentDay, true);
   } else {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('⚠️ ' + (err.error || 'Opslaan mislukt.'));
@@ -645,30 +652,91 @@ function bikeMin(a, b) {
 const round1 = (n) => Math.round(n * 10) / 10;
 
 // --- Kruisingen detecteren ---
-document.getElementById('detect-btn').addEventListener('click', async () => {
+// Draait automatisch na het opslaan van een route en bij het openen van de
+// verkeersmodus; de knop is er om handmatig opnieuw te detecteren.
+const detectingDays = new Set();
+
+async function detectCrossings(day, silent = false) {
+  const d = days[day];
+  if (!d.path || detectingDays.has(day)) return;
+  detectingDays.add(day);
+  if (!silent) setVrStatus('Kruisingen zoeken… (dit kan even duren)');
+  try {
+    const res = await fetch(`/api/admin/crossings/${day}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+      body: JSON.stringify({ path: d.path }),
+    });
+    if (res.ok) {
+      d.crossings = await res.json();
+      refreshVrLayer();
+      if (!silent) {
+        const visible = d.crossings.filter((c) => !c.hidden).length;
+        setVrStatus(
+          d.crossings.length === 0
+            ? '⚠️ Geen kruisingen gevonden — controleer of de route is opgeslagen en probeer opnieuw.'
+            : `✅ ${d.crossings.length} oversteekpunten gevonden (${visible} zichtbaar). Klik op een ruitje om te verbergen of een team toe te wijzen.`
+        );
+      }
+    } else if (!silent) {
+      const err = await res.json().catch(() => ({}));
+      setVrStatus('⚠️ ' + (err.error || 'Detecteren mislukt.'));
+    }
+  } catch {
+    if (!silent) setVrStatus('⚠️ Detecteren mislukt — server niet bereikbaar.');
+  } finally {
+    detectingDays.delete(day);
+  }
+}
+
+// Automatisch detecteren zodra de verkeersmodus opengaat zonder kruisingen.
+function maybeAutoDetect() {
+  const d = days[currentDay];
+  if (editMode !== 'vr' || !d.path) return;
+  if ((d.crossings || []).length === 0) detectCrossings(currentDay);
+}
+
+document.getElementById('detect-btn').addEventListener('click', () => {
   const d = days[currentDay];
   if (!d.path) {
     setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
-  setVrStatus('Kruisingen zoeken… (dit kan even duren)');
-  const res = await fetch(`/api/admin/crossings/${currentDay}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-    body: JSON.stringify({ path: d.path }),
-  });
-  if (res.ok) {
-    d.crossings = await res.json();
-    refreshVrLayer();
-    const visible = d.crossings.filter((c) => !c.hidden).length;
-    setVrStatus(
-      `✅ ${d.crossings.length} oversteekpunten gevonden (${visible} zichtbaar). Klik op een ruitje om te verbergen of een team toe te wijzen.`
-    );
-  } else {
-    const err = await res.json().catch(() => ({}));
-    setVrStatus('⚠️ ' + (err.error || 'Detecteren mislukt.'));
-  }
+  detectCrossings(currentDay);
 });
+
+// Handmatig een oversteekpunt toevoegen (klik op de kaart in verkeersmodus);
+// blijft staan bij herdetectie. Naam via de Google Geocoder.
+async function addManualCrossing(point) {
+  const d = days[currentDay];
+  if (!d.path) {
+    setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
+    return;
+  }
+  let name = 'eigen punt';
+  try {
+    const geocoder = new google.maps.Geocoder();
+    const { results } = await geocoder.geocode({ location: point });
+    if (results[0]) {
+      const route = results[0].address_components.find((c) => c.types.includes('route'));
+      name = route ? route.long_name : results[0].formatted_address.split(',')[0];
+    }
+  } catch {
+    // naam is niet kritisch
+  }
+  d.crossings.push({
+    id: `m${Date.now()}`,
+    lat: point.lat,
+    lng: point.lng,
+    name,
+    hidden: false,
+    team: null,
+    manual: true,
+  });
+  await saveCrossings(currentDay);
+  refreshVrLayer();
+  setVrStatus(`✅ Eigen punt "${name}" toegevoegd.`);
+}
 
 async function saveCrossings(day) {
   const res = await fetch(`/api/admin/crossings/${day}`, {
@@ -772,6 +840,19 @@ function openCrossingMenu(c, marker) {
     refreshVrLayer();
   });
   div.appendChild(hideBtn);
+
+  if (c.manual) {
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '🗑 Verwijder dit eigen punt';
+    delBtn.addEventListener('click', async () => {
+      const d = days[currentDay];
+      d.crossings = d.crossings.filter((x) => x !== c);
+      await saveCrossings(currentDay);
+      infoWindow.close();
+      refreshVrLayer();
+    });
+    div.appendChild(delBtn);
+  }
 
   infoWindow.setContent(div);
   infoWindow.open({ anchor: marker, map });

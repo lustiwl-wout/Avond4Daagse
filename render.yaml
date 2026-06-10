@@ -9,6 +9,8 @@ services:
       - key: DATABASE_URL
         sync: false # plak hier je Neon-connectiestring in het Render-dashboard
       - key: GOOGLE_MAPS_API_KEY
-        sync: false # plak hier je Google Maps API-key in het Render-dashboard
+        sync: false # browser-key (website-restrictie), voor de kaarten op de site
+      - key: GOOGLE_MAPS_SERVER_KEY
+        sync: false # server-key (geen website-restrictie), voor Roads API + Geocoding API
       - key: ADMIN_PASSWORD
         sync: false # zelfgekozen wachtwoord voor de beheerpagina (/admin)
