@@ -709,11 +709,13 @@ function distM(a, b) {
   return Math.hypot(x, y);
 }
 
-// Afstand (m) langs het wandelpad tot het punt op het pad dat het dichtst
-// bij `point` ligt — bepaalt wanneer de groep een oversteekpunt bereikt.
-function alongPath(path, point) {
+// Dichtstbijzijnde plek op het wandelpad bij `point`: afstand ertoe (m),
+// het gesnapte punt zelf, en de afstand langs het pad (bepaalt wanneer de
+// stoet een oversteekpunt bereikt).
+function nearestOnPath(path, point) {
   let best = Infinity;
   let bestAlong = 0;
+  let bestPoint = path[0];
   let cum = 0;
   for (let i = 0; i < path.length - 1; i++) {
     const a = path[i];
@@ -733,10 +735,15 @@ function alongPath(path, point) {
     if (d < best) {
       best = d;
       bestAlong = cum + segLen * t;
+      bestPoint = proj;
     }
     cum += segLen;
   }
-  return bestAlong;
+  return { dist: best, along: bestAlong, lat: bestPoint.lat, lng: bestPoint.lng };
+}
+
+function alongPath(path, point) {
+  return nearestOnPath(path, point).along;
 }
 
 // Minuten na vertrek waarop de kop van de groep een punt bereikt.
@@ -811,13 +818,24 @@ document.getElementById('detect-btn').addEventListener('click', () => {
 });
 
 // Handmatig een oversteekpunt toevoegen (klik op de kaart in verkeersmodus);
-// blijft staan bij herdetectie. Naam via de Google Geocoder.
-async function addManualCrossing(point) {
+// alleen mogelijk óp de wandelroute: een klik vlak naast de route wordt op de
+// route gesnapt, verder weg wordt geweigerd. Blijft staan bij herdetectie.
+const MANUAL_SNAP_M = 50;
+
+async function addManualCrossing(clicked) {
   const d = days[currentDay];
   if (!d.path) {
     setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
+  const nearest = nearestOnPath(d.path, clicked);
+  if (nearest.dist > MANUAL_SNAP_M) {
+    setVrStatus(
+      `⚠️ Punt niet toegevoegd: oversteekpunten moeten op de wandelroute liggen. Klik op (of vlak naast) de route van dag ${currentDay}.`
+    );
+    return;
+  }
+  const point = { lat: nearest.lat, lng: nearest.lng };
   let name = 'eigen punt';
   try {
     const geocoder = new google.maps.Geocoder();
