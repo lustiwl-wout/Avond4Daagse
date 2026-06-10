@@ -123,7 +123,8 @@ async function ensureStartFinish() {
       console.error('Geocoderen mislukt:', err);
       startFinish = { ...ALMERE_CENTER };
       setSaveStatus(
-        '⚠️ Adres opzoeken lukte niet (Geocoding API ingeschakeld?). Sleep de 🏁 naar de juiste plek — dat wordt automatisch bewaard.'
+        '⚠️ Adres opzoeken lukte niet (Geocoding API ingeschakeld?). Sleep de 🏁 naar de juiste plek — dat wordt automatisch bewaard.',
+        true
       );
     }
   }
@@ -188,7 +189,7 @@ async function saveStartFinish() {
 }
 
 // --- Tussenpunten bewerken ---
-function addPoint(day, point, index = null) {
+async function addPoint(day, point, index = null) {
   const d = days[day];
   if (d.points.length >= MAX_POINTS) {
     alert(`Maximaal ${MAX_POINTS} tussenpunten per route.`);
@@ -198,7 +199,18 @@ function addPoint(day, point, index = null) {
   d.points.splice(index, 0, point);
   addMarker(day, point, index);
   relabelMarkers(day);
-  updateRoute(day);
+  const status = await updateRoute(day);
+  if (status === 'ZERO_RESULTS' || status === 'NOT_FOUND') {
+    // Geen wandelroute mogelijk via dit punt: direct weer terugdraaien.
+    d.points.splice(index, 1);
+    d.markers[index].setMap(null);
+    d.markers.splice(index, 1);
+    relabelMarkers(day);
+    await updateRoute(day);
+    setSaveStatus(
+      '⚠️ Daar kan niet gewandeld worden — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of wandelpad.'
+    );
+  }
 }
 
 function removePoint(day, index) {
@@ -225,10 +237,18 @@ function addMarker(day, point, index) {
       strokeWeight: 2,
     },
   });
-  marker.addListener('dragend', () => {
+  marker.addListener('dragend', async () => {
     const i = d.markers.indexOf(marker);
+    const previous = d.points[i];
     d.points[i] = { lat: marker.getPosition().lat(), lng: marker.getPosition().lng() };
-    updateRoute(day);
+    const status = await updateRoute(day);
+    if (status === 'ZERO_RESULTS' || status === 'NOT_FOUND') {
+      // Geen wandelroute mogelijk: punt terug naar de vorige plek.
+      d.points[i] = previous;
+      marker.setPosition(previous);
+      await updateRoute(day);
+      setSaveStatus('⚠️ Daar kan niet gewandeld worden — het punt is teruggezet.');
+    }
   });
   marker.addListener('click', () => openPointMenu(day, marker));
   d.markers.splice(index, 0, marker);
@@ -294,6 +314,8 @@ function openStreetView(point) {
 }
 
 // --- Route berekenen: altijd wandelend, altijd van en naar start/finish ---
+// Geeft de Directions-status terug zodat de aanroeper een mislukt punt kan
+// terugdraaien ('EMPTY' als er nog niets te berekenen valt).
 function updateRoute(day) {
   const d = days[day];
   if (d.points.length < 1 || !startFinish) {
@@ -301,27 +323,35 @@ function updateRoute(day) {
     d.distanceM = 0;
     d.path = null;
     updateInfo();
-    return;
+    return Promise.resolve('EMPTY');
   }
-  directionsService.route(
-    {
-      origin: startFinish,
-      destination: startFinish,
-      waypoints: d.points.map((p) => ({ location: p, stopover: false })),
-      travelMode: google.maps.TravelMode.WALKING,
-    },
-    (result, status) => {
-      if (status === 'OK') {
-        d.renderer.setDirections(result);
-        const route = result.routes[0];
-        d.distanceM = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
-        d.path = route.overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() }));
-      } else {
-        console.error('Directions mislukt:', status);
+  return new Promise((resolve) => {
+    directionsService.route(
+      {
+        origin: startFinish,
+        destination: startFinish,
+        waypoints: d.points.map((p) => ({ location: p, stopover: false })),
+        travelMode: google.maps.TravelMode.WALKING,
+      },
+      (result, status) => {
+        if (status === 'OK') {
+          d.renderer.setDirections(result);
+          const route = result.routes[0];
+          d.distanceM = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
+          d.path = route.overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() }));
+        } else {
+          console.error('Directions mislukt:', status);
+          if (status === 'ZERO_RESULTS' || status === 'NOT_FOUND') {
+            setSaveStatus('⚠️ Geen wandelroute mogelijk langs deze punten.');
+          } else {
+            setSaveStatus(`⚠️ Route berekenen mislukt (${status}). Probeer het opnieuw.`);
+          }
+        }
+        updateInfo();
+        resolve(status);
       }
-      updateInfo();
-    }
-  );
+    );
+  });
 }
 
 function updateInfo() {
@@ -362,8 +392,15 @@ document.getElementById('undo-btn').addEventListener('click', () => {
 
 document.getElementById('clear-btn').addEventListener('click', () => clearDay(currentDay));
 
-function setSaveStatus(text) {
-  document.getElementById('save-status').textContent = text;
+let statusTimer = null;
+function setSaveStatus(text, sticky = false) {
+  const el = document.getElementById('save-status');
+  el.textContent = text;
+  if (statusTimer) clearTimeout(statusTimer);
+  statusTimer = null;
+  if (!sticky && text) {
+    statusTimer = setTimeout(() => (el.textContent = ''), 8000);
+  }
 }
 
 document.getElementById('save-btn').addEventListener('click', async () => {
