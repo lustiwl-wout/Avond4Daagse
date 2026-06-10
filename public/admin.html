@@ -8,9 +8,17 @@
 </head>
 <body>
   <header>
-    <h1>🛠 Routebeheer</h1>
-    <p>Avond4Daagse · Basisschool Syncope</p>
-    <a href="/" id="back-link">← Naar de bezoekerspagina</a>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a7 7 0 0 0-7 7c0 4.9 5.4 11.2 6.6 12.5a.55.55 0 0 0 .8 0C13.6 20.2 19 13.9 19 9a7 7 0 0 0-7-7z" fill="currentColor"/>
+        <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
+      </svg>
+      <div>
+        <h1>Routebeheer</h1>
+        <p class="sub">Avond4Daagse · Basisschool Syncope</p>
+      </div>
+    </div>
+    <a href="/" id="back-link">Bezoekerspagina</a>
   </header>
 
   <main>
@@ -18,7 +26,7 @@
       <section id="login-section">
         <h2>Inloggen</h2>
         <input type="password" id="admin-password" placeholder="Beheerwachtwoord" />
-        <button id="login-btn">🔑 Inloggen</button>
+        <button id="login-btn">Inloggen</button>
         <p id="login-status" class="hint"></p>
       </section>
 
@@ -26,9 +34,9 @@
         <section>
           <h2>Modus</h2>
           <div id="mode-tabs">
-            <button id="mode-route" class="mode-tab active">🗺 Route</button>
-            <button id="mode-rec" class="mode-tab">🎯 Vastleggen</button>
-            <button id="mode-vr" class="mode-tab">🦺 Verkeer</button>
+            <button id="mode-route" class="mode-tab active">Route</button>
+            <button id="mode-rec" class="mode-tab">Vastleggen</button>
+            <button id="mode-vr" class="mode-tab">Verkeer</button>
           </div>
         </section>
 
@@ -46,10 +54,10 @@
           <section>
             <h2>Route tekenen</h2>
             <p class="hint">
-              Start en finish liggen vast (🏁) en gelden voor alle dagen; versleep de
-              vlag eenmalig als hij niet precies goed staat. Klik op de kaart om
+              Start en finish liggen vast en gelden voor alle dagen; versleep de
+              markering eenmalig als hij niet precies goed staat. Klik op de kaart om
               tussenpunten toe te voegen — de route volgt automatisch wandelend de
-              straten, van 🏁 naar 🏁. <strong>Sleep</strong> een punt om hem te
+              straten, van start naar finish. <strong>Sleep</strong> een punt om hem te
               verplaatsen, <strong>klik</strong> op een punt voor Street View,
               verwijderen of een punt ertussen voegen.
             </p>
@@ -59,10 +67,10 @@
             </div>
             <p id="draft-status" class="hint"></p>
             <div class="button-row">
-              <button id="undo-btn">↩ Laatste punt weg</button>
-              <button id="clear-btn">🗑 Wis kaart</button>
+              <button id="undo-btn">Laatste punt weg</button>
+              <button id="clear-btn">Wis kaart</button>
             </div>
-            <button id="revert-btn">⏪ Herstel vorige versie</button>
+            <button id="revert-btn">Herstel vorige versie</button>
           </section>
 
           <section>
@@ -72,8 +80,8 @@
               zien alleen de definitieve versie. Definitief maken publiceert de
               route en wist alle tussenversies.
             </p>
-            <button id="save-btn" class="primary">✅ Maak route dag 1 definitief</button>
-            <button id="delete-btn">❌ Verwijder route dag 1</button>
+            <button id="save-btn" class="primary">Maak route dag 1 definitief</button>
+            <button id="delete-btn">Verwijder route dag 1</button>
           </section>
         </div>
 
@@ -87,22 +95,22 @@
               versleepbaar. Vergeet niet op te slaan!
             </p>
             <div class="button-row">
-              <button id="gps-start" class="primary">📍 Start GPS</button>
-              <button id="gps-stop" class="danger hidden">⏹ Stop GPS</button>
+              <button id="gps-start" class="primary">Start GPS</button>
+              <button id="gps-stop" class="danger hidden">Stop GPS</button>
             </div>
             <label id="follow-label" class="hidden">
               <input type="checkbox" id="follow-me" checked /> Kaart volgt mij
             </label>
             <p id="gps-status" class="hint"></p>
-            <button id="rec-add" class="primary big">➕ Leg punt vast op mijn locatie</button>
+            <button id="rec-add" class="primary big">Leg punt vast op mijn locatie</button>
             <div id="route-info-rec" class="route-info">
               <span id="rec-count">0 tussenpunten</span>
               <strong id="rec-distance">0,0 km</strong>
             </div>
             <p id="draft-status-rec" class="hint"></p>
             <div class="button-row">
-              <button id="rec-undo">↩ Laatste punt weg</button>
-              <button id="rec-save" class="primary">✅ Definitief dag 1</button>
+              <button id="rec-undo">Laatste punt weg</button>
+              <button id="rec-save" class="primary">Definitief dag 1</button>
             </div>
           </section>
         </div>
@@ -119,14 +127,14 @@
               <strong>Klik op de kaart</strong> om zelf een extra punt toe te
               voegen.
             </p>
-            <button id="detect-btn">🔄 Detecteer opnieuw dag 1</button>
+            <button id="detect-btn">Detecteer opnieuw dag 1</button>
           </section>
 
           <section>
-            <h2>Teams (altijd op de fiets 🚲)</h2>
+            <h2>Teams (altijd op de fiets)</h2>
             <ul id="team-list"><li class="hint">Nog geen teams.</li></ul>
             <input type="text" id="team-name" placeholder="Naam, bijv. Team A" />
-            <button id="add-team-btn">➕ Team toevoegen</button>
+            <button id="add-team-btn">Team toevoegen</button>
           </section>
 
           <section>
@@ -148,15 +156,15 @@
               "Bereken teamroutes" doet daarna de definitieve toets met echte
               fietstijden van Google.
             </p>
-            <button id="autoplan-btn">🪄 Plan teams automatisch dag 1</button>
+            <button id="autoplan-btn">Plan teams automatisch dag 1</button>
             <p class="hint" style="margin-top:0.6rem">
-              Teamroutes berekenen tekent per team de fietsroute 🏁 → posten → 🏁
+              Teamroutes berekenen tekent per team de fietsroute start → posten → finish
               (stippellijn), toetst de <strong>tijden</strong> en controleert dat de
               route de wandelgroep <strong>nooit doorkruist</strong>. Onvermijdelijke
               kruisingen kun je per stuk goedkeuren via het rode uitroepteken.
             </p>
-            <button id="team-routes-btn">🧭 Bereken teamroutes dag 1</button>
-            <button id="print-btn">🖨 Printversie dag 1</button>
+            <button id="team-routes-btn">Bereken teamroutes dag 1</button>
+            <button id="print-btn">Printversie dag 1</button>
             <p id="vr-status" class="hint"></p>
           </section>
         </div>

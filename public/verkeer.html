@@ -8,9 +8,17 @@
 </head>
 <body>
   <header>
-    <h1>🦺 Verkeersregelaars</h1>
-    <p>Avond4Daagse · Syncope</p>
-    <a href="/" id="back-link">← Routes</a>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a7 7 0 0 0-7 7c0 4.9 5.4 11.2 6.6 12.5a.55.55 0 0 0 .8 0C13.6 20.2 19 13.9 19 9a7 7 0 0 0-7-7z" fill="currentColor"/>
+        <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
+      </svg>
+      <div>
+        <h1>Verkeersregelaars</h1>
+        <p class="sub">Avond4Daagse · Basisschool Syncope</p>
+      </div>
+    </div>
+    <a href="/" id="back-link">Routes</a>
   </header>
 
   <main>
@@ -27,8 +35,8 @@
 
       <section>
         <div class="button-row">
-          <button id="gps-start" class="primary">📍 Start GPS</button>
-          <button id="gps-stop" class="danger hidden">⏹ Stop GPS</button>
+          <button id="gps-start" class="primary">Start GPS</button>
+          <button id="gps-stop" class="danger hidden">Stop GPS</button>
         </div>
         <label id="follow-label" class="hidden">
           <input type="checkbox" id="follow-me" checked /> Kaart volgt mij
@@ -39,11 +47,11 @@
       <p id="vr-warning" class="hint warning"></p>
 
       <details id="info-details">
-        <summary>📋 Mijn tijdschema & uitleg</summary>
+        <summary>Mijn tijdschema & uitleg</summary>
         <ul id="vr-schedule"><li class="hint">Kies eerst je team.</li></ul>
         <p class="hint">
           Ruitjes = oversteekpunten (jouw punten in jullie teamkleur), de
-          stippellijn is jullie fietsroute 🏁 → posten → 🏁. Vertrek pas als de
+          stippellijn is jullie fietsroute start → posten → finish. Vertrek pas als de
           héle groep voorbij is. Een gele ✓ is een goedgekeurde oversteek van de
           wandelroute: stap af en kijk uit. Klik op een punt voor Street View.
         </p>

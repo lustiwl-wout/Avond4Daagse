@@ -18,7 +18,7 @@ async function loadGoogleMaps() {
   const config = await res.json();
   if (!config.googleMapsApiKey) {
     document.getElementById('map').innerHTML =
-      '<p style="padding:2rem">⚠️ Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
+      '<p style="padding:2rem">Let op: Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
     return;
   }
   startFinish = config.startFinish;
@@ -43,25 +43,17 @@ window.initMap = async function () {
       position: startFinish,
       map,
       title: 'Start & finish',
-      label: { text: '🏁', fontSize: '14px' },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 13,
-        fillColor: '#0f172a',
-        fillOpacity: 1,
-        strokeColor: '#fff',
-        strokeWeight: 2,
-      },
+      icon: flagIcon(),
       zIndex: 999,
     });
     flag.addListener('click', () => {
       const div = document.createElement('div');
       div.className = 'point-menu';
       const title = document.createElement('strong');
-      title.textContent = '🏁 Start & finish van alle dagen';
+      title.textContent = 'Start & finish van alle dagen';
       div.appendChild(title);
       const svBtn = document.createElement('button');
-      svBtn.textContent = '👀 Bekijk in Street View';
+      svBtn.textContent = 'Bekijk in Street View';
       svBtn.addEventListener('click', () => {
         infoWindow.close();
         const pano = map.getStreetView();
@@ -86,7 +78,7 @@ async function loadRoutes() {
     if (!res.ok) throw new Error();
     rows = await res.json();
   } catch {
-    list.innerHTML = '<li class="hint">⚠️ Routes laden mislukt.</li>';
+    list.innerHTML = '<li class="hint">Let op: Routes laden mislukt.</li>';
     return;
   }
 

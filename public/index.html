@@ -8,9 +8,17 @@
 </head>
 <body>
   <header>
-    <h1>🚶 Avond4Daagse</h1>
-    <p>Basisschool Syncope · Almere</p>
-    <a href="/verkeer" id="back-link">🦺 Verkeersregelaars</a>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a7 7 0 0 0-7 7c0 4.9 5.4 11.2 6.6 12.5a.55.55 0 0 0 .8 0C13.6 20.2 19 13.9 19 9a7 7 0 0 0-7-7z" fill="currentColor"/>
+        <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
+      </svg>
+      <div>
+        <h1>Avond4Daagse</h1>
+        <p class="sub">Basisschool Syncope · Almere</p>
+      </div>
+    </div>
+    <a href="/verkeer" id="back-link">Verkeersregelaars</a>
   </header>
 
   <main>
@@ -27,8 +35,8 @@
 
       <section>
         <div class="button-row">
-          <button id="gps-start" class="primary">📍 Start GPS</button>
-          <button id="gps-stop" class="danger hidden">⏹ Stop GPS</button>
+          <button id="gps-start" class="primary">Start GPS</button>
+          <button id="gps-stop" class="danger hidden">Stop GPS</button>
         </div>
         <label id="follow-label" class="hidden">
           <input type="checkbox" id="follow-me" checked /> Kaart volgt mij
@@ -37,10 +45,10 @@
       </section>
 
       <details id="info-details">
-        <summary>ℹ️ Afstanden & uitleg</summary>
+        <summary>Afstanden & uitleg</summary>
         <ul id="distance-list"><li class="hint">Laden…</li></ul>
         <p class="hint">
-          Alle dagen starten en eindigen bij de 🏁 op de kaart. Sleep het gele
+          Alle dagen starten en eindigen bij de start/finish-markering op de kaart. Sleep het gele
           poppetje (rechtsonder) op de route voor Street View.
         </p>
       </details>

@@ -64,8 +64,8 @@ function updateDraftStatus() {
   const n = draftCounts[currentDay];
   const text =
     n > 0
-      ? `📝 Concept — ${n} wijziging${n === 1 ? '' : 'en'} automatisch bewaard, nog niet definitief`
-      : '✅ Definitieve versie — geen openstaande wijzigingen';
+      ? `Concept — ${n} wijziging${n === 1 ? '' : 'en'} automatisch bewaard, nog niet definitief`
+      : 'Definitieve versie — geen openstaande wijzigingen';
   document.getElementById('draft-status').textContent = text;
   document.getElementById('draft-status-rec').textContent = text;
 }
@@ -75,7 +75,7 @@ async function loadGoogleMaps() {
   config = await res.json();
   if (!config.googleMapsApiKey) {
     document.getElementById('map').innerHTML =
-      '<p style="padding:2rem">⚠️ Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
+      '<p style="padding:2rem">Let op: Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
     return;
   }
   startFinish = config.startFinish;
@@ -143,11 +143,11 @@ async function tryLogin(pwd) {
       initSettingsInputs();
     } else {
       const err = await res.json().catch(() => ({}));
-      status.textContent = '⚠️ ' + (err.error || 'Inloggen mislukt.');
+      status.textContent = 'Let op: ' + (err.error || 'Inloggen mislukt.');
       sessionStorage.removeItem('a4d-admin-password');
     }
   } catch {
-    status.textContent = '⚠️ Server niet bereikbaar.';
+    status.textContent = 'Let op: Server niet bereikbaar.';
   }
 }
 
@@ -176,12 +176,12 @@ async function ensureStartFinish() {
       const loc = results[0].geometry.location;
       startFinish = { lat: loc.lat(), lng: loc.lng() };
       await saveStartFinish();
-      setSaveStatus('✅ Start & finish automatisch ingesteld.');
+      setSaveStatus('Start & finish automatisch ingesteld.');
     } catch (err) {
       console.error('Geocoderen mislukt:', err);
       startFinish = { ...ALMERE_CENTER };
       setSaveStatus(
-        '⚠️ Adres opzoeken lukte niet (Geocoding API ingeschakeld?). Sleep de 🏁 naar de juiste plek — dat wordt automatisch bewaard.',
+        'Let op: Adres opzoeken lukte niet (Geocoding API ingeschakeld?). Sleep de start/finish-markering naar de juiste plek — dat wordt automatisch bewaard.',
         true
       );
     }
@@ -198,15 +198,7 @@ function placeStartMarker() {
     map,
     draggable: true,
     title: 'Start & finish — versleep om te corrigeren',
-    label: { text: '🏁', fontSize: '14px' },
-    icon: {
-      path: google.maps.SymbolPath.CIRCLE,
-      scale: 13,
-      fillColor: '#0f172a',
-      fillOpacity: 1,
-      strokeColor: '#fff',
-      strokeWeight: 2,
-    },
+    icon: flagIcon(),
     zIndex: 999,
   });
   startMarker.addListener('click', () => {
@@ -216,7 +208,7 @@ function placeStartMarker() {
     title.textContent = 'Start & finish';
     div.appendChild(title);
     const svBtn = document.createElement('button');
-    svBtn.textContent = '👀 Bekijk in Street View';
+    svBtn.textContent = 'Bekijk in Street View';
     svBtn.addEventListener('click', () => {
       infoWindow.close();
       openStreetView(startFinish);
@@ -234,7 +226,7 @@ function placeStartMarker() {
     for (let day = 1; day <= 4; day++) {
       if (days[day].points.length > 0) updateRoute(day);
     }
-    setSaveStatus('✅ Start & finish verplaatst. Sla de dagen opnieuw op om de routes bij te werken.');
+    setSaveStatus('Start & finish verplaatst. Sla de dagen opnieuw op om de routes bij te werken.');
   });
 }
 
@@ -266,7 +258,7 @@ async function addPoint(day, point, index = null) {
     relabelMarkers(day);
     await updateRoute(day);
     setSaveStatus(
-      '⚠️ Daar kan niet gewandeld worden — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of wandelpad.'
+      'Let op: Daar kan niet gewandeld worden — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of wandelpad.'
     );
   } else {
     scheduleDraftSave(day);
@@ -308,7 +300,7 @@ function addMarker(day, point, index) {
       d.points[i] = previous;
       marker.setPosition(previous);
       await updateRoute(day);
-      setSaveStatus('⚠️ Daar kan niet gewandeld worden — het punt is teruggezet.');
+      setSaveStatus('Let op: Daar kan niet gewandeld worden — het punt is teruggezet.');
     } else {
       scheduleDraftSave(day);
     }
@@ -335,7 +327,7 @@ function openPointMenu(day, marker) {
   div.appendChild(title);
 
   const svBtn = document.createElement('button');
-  svBtn.textContent = '👀 Bekijk in Street View';
+  svBtn.textContent = 'Bekijk in Street View';
   svBtn.addEventListener('click', () => {
     infoWindow.close();
     openStreetView(d.points[index]);
@@ -343,7 +335,7 @@ function openPointMenu(day, marker) {
   div.appendChild(svBtn);
 
   const delBtn = document.createElement('button');
-  delBtn.textContent = '🗑 Verwijder dit punt';
+  delBtn.textContent = 'Verwijder dit punt';
   delBtn.addEventListener('click', () => {
     infoWindow.close();
     removePoint(day, index);
@@ -352,7 +344,7 @@ function openPointMenu(day, marker) {
 
   if (index < d.points.length - 1) {
     const insertBtn = document.createElement('button');
-    insertBtn.textContent = '➕ Punt invoegen hierna';
+    insertBtn.textContent = 'Punt invoegen hierna';
     insertBtn.addEventListener('click', () => {
       infoWindow.close();
       const a = d.points[index];
@@ -397,6 +389,7 @@ function updateRoute(day) {
         travelMode: google.maps.TravelMode.WALKING,
       },
       (result, status) => {
+        relabelMarkers(day); // nummering altijd kloppend houden, ook na invoegen
         if (status === 'OK') {
           d.renderer.setDirections(result);
           const route = result.routes[0];
@@ -405,9 +398,9 @@ function updateRoute(day) {
         } else {
           console.error('Directions mislukt:', status);
           if (status === 'ZERO_RESULTS' || status === 'NOT_FOUND') {
-            setSaveStatus('⚠️ Geen wandelroute mogelijk langs deze punten.');
+            setSaveStatus('Let op: Geen wandelroute mogelijk langs deze punten.');
           } else {
-            setSaveStatus(`⚠️ Route berekenen mislukt (${status}). Probeer het opnieuw.`);
+            setSaveStatus(`Let op: Route berekenen mislukt (${status}). Probeer het opnieuw.`);
           }
         }
         updateInfo();
@@ -453,13 +446,13 @@ function loadDayPoints(day, waypoints) {
 
 // --- UI: dagen en modus ---
 function updateDayLabels() {
-  document.getElementById('save-btn').textContent = `✅ Maak route dag ${currentDay} definitief`;
-  document.getElementById('delete-btn').textContent = `❌ Verwijder route dag ${currentDay}`;
-  document.getElementById('detect-btn').textContent = `🔄 Detecteer opnieuw dag ${currentDay}`;
-  document.getElementById('autoplan-btn').textContent = `🪄 Plan teams automatisch dag ${currentDay}`;
-  document.getElementById('team-routes-btn').textContent = `🧭 Bereken teamroutes dag ${currentDay}`;
-  document.getElementById('print-btn').textContent = `🖨 Printversie dag ${currentDay}`;
-  document.getElementById('rec-save').textContent = `✅ Definitief dag ${currentDay}`;
+  document.getElementById('save-btn').textContent = `Maak route dag ${currentDay} definitief`;
+  document.getElementById('delete-btn').textContent = `Verwijder route dag ${currentDay}`;
+  document.getElementById('detect-btn').textContent = `Detecteer opnieuw dag ${currentDay}`;
+  document.getElementById('autoplan-btn').textContent = `Plan teams automatisch dag ${currentDay}`;
+  document.getElementById('team-routes-btn').textContent = `Bereken teamroutes dag ${currentDay}`;
+  document.getElementById('print-btn').textContent = `Printversie dag ${currentDay}`;
+  document.getElementById('rec-save').textContent = `Definitief dag ${currentDay}`;
   updateDraftStatus();
 }
 
@@ -503,7 +496,7 @@ const gps = setupGps(() => map);
 document.getElementById('rec-add').addEventListener('click', () => {
   const pos = gps.getPosition();
   if (!pos) {
-    setSaveStatus('⚠️ Start eerst de GPS en wacht op een locatie.');
+    setSaveStatus('Let op: Start eerst de GPS en wacht op een locatie.');
     return;
   }
   addPoint(currentDay, pos);
@@ -552,13 +545,13 @@ async function saveCurrentDay() {
   if (res.ok) {
     draftCounts[currentDay] = 0;
     updateDraftStatus();
-    setSaveStatus(`✅ Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
+    setSaveStatus(`Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
     // Route gewijzigd: oversteekpunten op de achtergrond opnieuw detecteren
     // (verborgen punten en teamtoewijzingen blijven behouden).
     detectCrossings(currentDay, true);
   } else {
     const err = await res.json().catch(() => ({}));
-    setSaveStatus('⚠️ ' + (err.error || 'Publiceren mislukt.'));
+    setSaveStatus('Let op: ' + (err.error || 'Publiceren mislukt.'));
   }
 }
 
@@ -586,7 +579,7 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
     setSaveStatus(`Route dag ${currentDay} verwijderd.`);
   } else {
     const err = await res.json().catch(() => ({}));
-    setSaveStatus('⚠️ ' + (err.error || 'Verwijderen mislukt.'));
+    setSaveStatus('Let op: ' + (err.error || 'Verwijderen mislukt.'));
   }
 });
 
@@ -611,7 +604,7 @@ async function loadSavedRoutes() {
       }
     }
   } catch {
-    setSaveStatus('⚠️ Opgeslagen routes laden mislukt.');
+    setSaveStatus('Let op: Opgeslagen routes laden mislukt.');
   } finally {
     loadingRoutes = false;
     updateDraftStatus();
@@ -630,7 +623,7 @@ document.getElementById('revert-btn').addEventListener('click', async () => {
     headers: { 'x-admin-password': password },
   });
   if (!res.ok) {
-    setSaveStatus('⚠️ Terugdraaien mislukt.');
+    setSaveStatus('Let op: Terugdraaien mislukt.');
     return;
   }
   const data = await res.json();
@@ -647,7 +640,7 @@ document.getElementById('revert-btn').addEventListener('click', async () => {
   }
   loadingRoutes = false;
   updateDraftStatus();
-  setSaveStatus('⏪ Vorige versie hersteld.');
+  setSaveStatus('Vorige versie hersteld.');
 });
 
 // =====================================================================
@@ -786,16 +779,16 @@ async function detectCrossings(day, silent = false) {
         const visible = d.crossings.filter((c) => !c.hidden).length;
         setVrStatus(
           d.crossings.length === 0
-            ? '⚠️ Geen kruisingen gevonden — controleer of de route is opgeslagen en probeer opnieuw.'
-            : `✅ ${d.crossings.length} oversteekpunten gevonden (${visible} zichtbaar). Klik op een ruitje om te verbergen of een team toe te wijzen.`
+            ? 'Let op: Geen kruisingen gevonden — controleer of de route is opgeslagen en probeer opnieuw.'
+            : `${d.crossings.length} oversteekpunten gevonden (${visible} zichtbaar). Klik op een ruitje om te verbergen of een team toe te wijzen.`
         );
       }
     } else if (!silent) {
       const err = await res.json().catch(() => ({}));
-      setVrStatus('⚠️ ' + (err.error || 'Detecteren mislukt.'));
+      setVrStatus('Let op: ' + (err.error || 'Detecteren mislukt.'));
     }
   } catch {
-    if (!silent) setVrStatus('⚠️ Detecteren mislukt — server niet bereikbaar.');
+    if (!silent) setVrStatus('Let op: Detecteren mislukt — server niet bereikbaar.');
   } finally {
     detectingDays.delete(day);
   }
@@ -811,7 +804,7 @@ function maybeAutoDetect() {
 document.getElementById('detect-btn').addEventListener('click', () => {
   const d = days[currentDay];
   if (!d.path) {
-    setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
+    setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
   detectCrossings(currentDay);
@@ -825,13 +818,13 @@ const MANUAL_SNAP_M = 50;
 async function addManualCrossing(clicked) {
   const d = days[currentDay];
   if (!d.path) {
-    setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
+    setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
   const nearest = nearestOnPath(d.path, clicked);
   if (nearest.dist > MANUAL_SNAP_M) {
     setVrStatus(
-      `⚠️ Punt niet toegevoegd: oversteekpunten moeten op de wandelroute liggen. Klik op (of vlak naast) de route van dag ${currentDay}.`
+      `Let op: Punt niet toegevoegd: oversteekpunten moeten op de wandelroute liggen. Klik op (of vlak naast) de route van dag ${currentDay}.`
     );
     return;
   }
@@ -858,7 +851,7 @@ async function addManualCrossing(clicked) {
   });
   await saveCrossings(currentDay);
   refreshVrLayer();
-  setVrStatus(`✅ Eigen punt "${name}" toegevoegd.`);
+  setVrStatus(`Eigen punt "${name}" toegevoegd.`);
 }
 
 async function saveCrossings(day) {
@@ -869,7 +862,7 @@ async function saveCrossings(day) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    setVrStatus('⚠️ ' + (err.error || 'Kruisingen opslaan mislukt.'));
+    setVrStatus('Let op: ' + (err.error || 'Kruisingen opslaan mislukt.'));
   }
 }
 
@@ -922,7 +915,7 @@ function openCrossingMenu(c, marker) {
   div.className = 'point-menu';
 
   const title = document.createElement('strong');
-  title.textContent = `🦺 Oversteek: ${c.name}`;
+  title.textContent = `Oversteek: ${c.name}`;
   div.appendChild(title);
 
   const teamSelect = document.createElement('select');
@@ -946,7 +939,7 @@ function openCrossingMenu(c, marker) {
   div.appendChild(teamSelect);
 
   const svBtn = document.createElement('button');
-  svBtn.textContent = '👀 Bekijk in Street View';
+  svBtn.textContent = 'Bekijk in Street View';
   svBtn.addEventListener('click', () => {
     infoWindow.close();
     openStreetView({ lat: c.lat, lng: c.lng });
@@ -954,7 +947,7 @@ function openCrossingMenu(c, marker) {
   div.appendChild(svBtn);
 
   const hideBtn = document.createElement('button');
-  hideBtn.textContent = c.hidden ? '👁 Weer tonen in planning' : '🙈 Verberg voor planning';
+  hideBtn.textContent = c.hidden ? 'Weer tonen in planning' : 'Verberg voor planning';
   hideBtn.addEventListener('click', async () => {
     c.hidden = !c.hidden;
     if (c.hidden) c.team = null;
@@ -966,7 +959,7 @@ function openCrossingMenu(c, marker) {
 
   if (c.manual) {
     const delBtn = document.createElement('button');
-    delBtn.textContent = '🗑 Verwijder dit eigen punt';
+    delBtn.textContent = 'Verwijder dit eigen punt';
     delBtn.addEventListener('click', async () => {
       const d = days[currentDay];
       d.crossings = d.crossings.filter((x) => x !== c);
@@ -1036,7 +1029,7 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
     renderTeams();
   } else {
     const err = await res.json().catch(() => ({}));
-    setVrStatus('⚠️ ' + (err.error || 'Team aanmaken mislukt.'));
+    setVrStatus('Let op: ' + (err.error || 'Team aanmaken mislukt.'));
   }
 });
 
@@ -1063,13 +1056,13 @@ function teamDirections(points) {
 // punten krijgen daardoor automatisch verschillende teams.
 document.getElementById('autoplan-btn').addEventListener('click', async () => {
   const d = days[currentDay];
-  if (!d.path) return setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
-  if (teams.length === 0) return setVrStatus('⚠️ Maak eerst teams aan.');
+  if (!d.path) return setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
+  if (teams.length === 0) return setVrStatus('Let op: Maak eerst teams aan.');
   const ordered = d.crossings
     .filter((c) => !c.hidden)
     .map((c) => ({ c, along: alongPath(d.path, c) }))
     .sort((a, b) => a.along - b.along);
-  if (ordered.length === 0) return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
+  if (ordered.length === 0) return setVrStatus('Let op: Detecteer eerst de kruisingen.');
 
   // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder punt
   // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
@@ -1098,11 +1091,11 @@ document.getElementById('autoplan-btn').addEventListener('click', async () => {
   refreshVrLayer();
   if (unassigned > 0) {
     setVrStatus(
-      `⚠️ ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten. Klik daarna op "Bereken teamroutes".`
+      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten. Klik daarna op "Bereken teamroutes".`
     );
   } else {
     setVrStatus(
-      `✅ Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
+      `Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
     );
   }
 });
@@ -1110,7 +1103,7 @@ document.getElementById('autoplan-btn').addEventListener('click', async () => {
 document.getElementById('team-routes-btn').addEventListener('click', async () => {
   const d = days[currentDay];
   if (!d.path) {
-    setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
+    setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
   setVrStatus('Teamroutes berekenen en toetsen…');
@@ -1142,7 +1135,7 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     // Tijdstoets: een team bemant één punt tegelijk. Vertrekken kan pas als
     // de héle stoet voorbij is; het volgende punt moet bereikt zijn vóórdat
     // de kop van de stoet daar aankomt.
-    // legs[i] is de fietsleg van punt i-1 naar punt i (leg 0 = vanaf 🏁).
+    // legs[i] is de fietsleg van punt i-1 naar punt i (leg 0 = vanaf).
     const schedule = points.map(({ c, along }) => ({
       name: c.name,
       headMin: round1(headMin(along)),
@@ -1197,7 +1190,7 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
 
     if (!feasible) {
       problems.push(
-        `⏱ ${team.name} haalt het niet: ${late
+        `${team.name} haalt het niet: ${late
           .map((l) => `${l.point} (${l.lateMin} min te laat)`)
           .join(', ')}`
       );
@@ -1205,16 +1198,16 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     const openConflicts = conflicts.filter((cf) => !cf.approved).length;
     if (openConflicts > 0) {
       problems.push(
-        `⚠️ route van ${team.name} DOORKRUIST de wandelroute op ${openConflicts} plek(ken) — los op of keur goed via het rode uitroepteken`
+        `Let op: route van ${team.name} DOORKRUIST de wandelroute op ${openConflicts} plek(ken) — los op of keur goed via het rode uitroepteken`
       );
     }
   }
   refreshVrLayer();
   if (problems.length > 0) {
-    setVrStatus('⚠️ ' + problems.join(' — '));
+    setVrStatus('Let op: ' + problems.join(' — '));
   } else {
     setVrStatus(
-      '✅ Teamroutes berekend: alle punten zijn op tijd bemand en geen route kruist de wandelgroep.'
+      'Teamroutes berekend: alle punten zijn op tijd bemand en geen route kruist de wandelgroep.'
     );
   }
 });
@@ -1279,7 +1272,7 @@ function openConflictMenu(team, tr, conflict, marker) {
   const approveBtn = document.createElement('button');
   approveBtn.textContent = conflict.approved
     ? '↩ Goedkeuring intrekken'
-    : '✅ Keur uitzondering goed';
+    : 'Keur uitzondering goed';
   approveBtn.addEventListener('click', async () => {
     conflict.approved = !conflict.approved;
     infoWindow.close();
@@ -1298,7 +1291,7 @@ function openConflictMenu(team, tr, conflict, marker) {
   div.appendChild(approveBtn);
 
   const svBtn = document.createElement('button');
-  svBtn.textContent = '👀 Bekijk in Street View';
+  svBtn.textContent = 'Bekijk in Street View';
   svBtn.addEventListener('click', () => {
     infoWindow.close();
     openStreetView({ lat: conflict.lat, lng: conflict.lng });
@@ -1318,11 +1311,11 @@ function updateVrWarnings() {
     const open = (tr.conflicts || []).filter((c) => !c.approved).length;
     if (open > 0) warnings.push(`route van ${t.name} doorkruist de wandelroute (rode uitroeptekens)`);
     if (tr.timing && tr.timing.feasible === false) {
-      warnings.push(`${t.name} haalt zijn punten niet op tijd (⏱)`);
+      warnings.push(`${t.name} haalt zijn punten niet op tijd`);
     }
   }
   if (warnings.length > 0) {
-    setVrStatus('⚠️ LET OP: ' + warnings.join('; ') + '. Pas de planning aan en bereken opnieuw.');
+    setVrStatus('Let op: ' + warnings.join('; ') + '. Pas de planning aan en bereken opnieuw.');
   }
 }
 

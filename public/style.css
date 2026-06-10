@@ -1,159 +1,238 @@
+/* =========================================================
+   Huisstijl — pas deze variabelen aan om de site exact op de
+   schoolhuisstijl (syncope.asg.nl) aan te laten sluiten.
+   ========================================================= */
+:root {
+  --brand: #1d4ed8;        /* hoofdkleur (header, primaire knoppen) */
+  --brand-dark: #1e40af;   /* hoverkleur van primaire knoppen */
+  --brand-contrast: #ffffff;
+  --danger: #dc2626;
+  --ink: #1f2937;          /* tekstkleur */
+  --muted: #64748b;        /* secundaire tekst */
+  --bg: #f8fafc;           /* achtergrond zijbalk */
+  --card: #ffffff;
+  --line: #e2e8f0;         /* randen */
+  --radius: 8px;
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   display: flex;
   flex-direction: column;
   height: 100vh;
-  color: #1f2937;
+  color: var(--ink);
 }
 
 .hidden { display: none !important; }
 
+/* --- Header --- */
 header {
-  background: #1d4ed8;
-  color: #fff;
-  padding: 0.6rem 1rem;
+  background: var(--brand);
+  color: var(--brand-contrast);
+  padding: 0.65rem 1rem;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 1rem;
 }
 
-header h1 { font-size: 1.2rem; }
-header p { opacity: 0.85; font-size: 0.9rem; flex: 1; }
-#back-link { color: #fff; opacity: 0.85; font-size: 0.85rem; }
+.brand { display: flex; align-items: center; gap: 0.65rem; flex: 1; min-width: 0; }
 
-main {
-  flex: 1;
-  display: flex;
-  min-height: 0;
+.logo { width: 30px; height: 30px; flex: none; color: var(--brand-contrast); }
+.logo-dot { fill: var(--brand); }
+
+header h1 { font-size: 1.05rem; font-weight: 700; letter-spacing: 0.01em; line-height: 1.2; }
+header .sub { opacity: 0.8; font-size: 0.78rem; }
+
+#back-link {
+  color: var(--brand-contrast);
+  font-size: 0.85rem;
+  text-decoration: none;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: var(--radius);
+  padding: 0.35rem 0.7rem;
+  white-space: nowrap;
 }
+
+#back-link:hover { background: rgba(255, 255, 255, 0.12); }
+
+/* --- Indeling --- */
+main { flex: 1; display: flex; min-height: 0; }
 
 #sidebar {
-  width: 300px;
+  width: 310px;
   overflow-y: auto;
   padding: 1rem;
-  background: #f8fafc;
-  border-right: 1px solid #e2e8f0;
+  background: var(--bg);
+  border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: 1.1rem;
 }
 
-#editor { display: flex; flex-direction: column; gap: 1.2rem; }
+#editor, #route-mode, #rec-mode, #vr-mode { display: flex; flex-direction: column; gap: 1.1rem; }
 
 #sidebar h2 {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #64748b;
-  margin-bottom: 0.4rem;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin-bottom: 0.45rem;
 }
 
-.hint { font-size: 0.8rem; color: #64748b; margin-bottom: 0.4rem; }
+.hint { font-size: 0.8rem; color: var(--muted); margin-bottom: 0.4rem; line-height: 1.45; }
 
+/* --- Tabbladen --- */
 #day-tabs, #mode-tabs { display: flex; gap: 0.3rem; }
 
-.mode-tab {
+.day-tab, .mode-tab {
   flex: 1;
   padding: 0.45rem 0.2rem;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius);
   cursor: pointer;
   font-weight: 600;
   font-size: 0.8rem;
+  color: var(--ink);
+  transition: background 0.15s, color 0.15s;
 }
 
-.mode-tab.active { background: #0f172a; color: #fff; border-color: transparent; }
-
-#route-mode, #vr-mode { display: flex; flex-direction: column; gap: 1.2rem; }
-
-.day-tab {
-  flex: 1;
-  padding: 0.45rem 0.2rem;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.8rem;
-}
-
-.day-tab.active { color: #fff; border-color: transparent; }
+.day-tab.active, .mode-tab.active { color: #fff; border-color: transparent; }
+.mode-tab.active { background: #0f172a; }
 .day-tab.active[data-day="all"] { background: #0f172a; }
 .day-tab.active[data-day="1"] { background: #dc2626; }
 .day-tab.active[data-day="2"] { background: #2563eb; }
 .day-tab.active[data-day="3"] { background: #16a34a; }
 .day-tab.active[data-day="4"] { background: #9333ea; }
 
-#route-info, .route-info {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.5rem 0.7rem;
-  margin-bottom: 0.5rem;
-}
-
-#distance { font-size: 1.1rem; }
-
-.button-row { display: flex; gap: 0.4rem; }
-
+/* --- Knoppen en invoer --- */
 button {
   padding: 0.5rem 0.7rem;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius);
   cursor: pointer;
   font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--ink);
+  transition: background 0.15s, border-color 0.15s;
 }
 
 button:hover { background: #f1f5f9; }
+button:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 
-#save-btn, #delete-btn, #login-btn, #gps-start, #gps-stop {
-  width: 100%;
-  margin-top: 0.4rem;
+#save-btn, #login-btn, .primary {
+  background: var(--brand);
+  color: var(--brand-contrast);
+  border-color: transparent;
 }
+#save-btn:hover, #login-btn:hover, .primary:hover { background: var(--brand-dark); }
 
-#save-btn, #login-btn, .primary { background: #1d4ed8; color: #fff; border-color: transparent; }
-#save-btn:hover, #login-btn:hover, .primary:hover { background: #1e40af; }
-
-.danger { background: #dc2626; color: #fff; border-color: transparent; }
+.danger { background: var(--danger); color: #fff; border-color: transparent; }
 .danger:hover { background: #b91c1c; }
 
 .big { font-size: 1rem; padding: 0.8rem 0.7rem; width: 100%; margin-top: 0.5rem; }
 
 #rec-add { margin-bottom: 0.5rem; }
 
+#delete-btn { color: var(--danger); }
+
+#save-btn, #delete-btn, #login-btn, #gps-start, #gps-stop, #revert-btn {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+#vr-team { width: 100%; margin-bottom: 0.4rem; }
+#vr-toggle, #detect-btn, #team-routes-btn, #autoplan-btn, #print-btn, #add-team-btn {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+input[type="text"], input[type="password"] {
+  width: 100%;
+  padding: 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+input:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+
+#team-name { margin-top: 0.4rem; }
+
+select {
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  font-size: 0.85rem;
+  max-width: 100%;
+}
+
+.button-row { display: flex; gap: 0.4rem; }
+.button-row button { flex: 1; }
+
+/* --- Panelen en lijsten --- */
+#route-info, .route-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+#distance, #rec-distance { font-size: 1.1rem; }
+
 details {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.5rem 0.7rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
 }
 
 details summary { cursor: pointer; font-weight: 600; font-size: 0.85rem; }
 details > *:not(summary) { margin-top: 0.5rem; }
 
-#delete-btn { color: #dc2626; }
-
-#admin-password {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
+#distance-list, #team-list, #vr-schedule {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
-#follow-label {
-  display: block;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
+#distance-list li, #team-list li, #vr-schedule li {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.87rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
 }
 
-.warning { color: #dc2626; font-weight: 600; }
+#vr-schedule { margin-top: 0.4rem; }
+#vr-schedule li { display: block; }
+
+#team-list button { padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+
+.day-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+}
+
+.route-meta { color: var(--muted); font-size: 0.75rem; }
+
+.warning { color: var(--danger); font-weight: 600; }
 
 .setting-row {
   display: flex;
@@ -166,107 +245,37 @@ details > *:not(summary) { margin-top: 0.5rem; }
 
 .setting-row input[type="number"] {
   width: 4.2rem;
-  padding: 0.25rem 0.35rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   margin-right: 0.3rem;
 }
 
-#vr-schedule { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.4rem; }
+#follow-label { display: block; margin-top: 0.5rem; font-size: 0.85rem; }
 
-#vr-schedule li {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
-}
-
-.route-meta { color: #64748b; font-size: 0.75rem; }
-
-select {
-  padding: 0.35rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #fff;
-  font-size: 0.8rem;
-  max-width: 100%;
-}
-
-#vr-team { width: 100%; margin-bottom: 0.4rem; }
-#vr-toggle, #detect-btn, #team-routes-btn, #add-team-btn { width: 100%; margin-top: 0.4rem; }
-
-#team-name {
-  width: 100%;
-  padding: 0.5rem;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  margin-top: 0.4rem;
-}
-
-#team-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
-
-#team-list li {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.85rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-#team-list button { padding: 0.2rem 0.45rem; font-size: 0.75rem; }
-
-#distance-list { list-style: none; display: flex; flex-direction: column; gap: 0.4rem; }
-
-#distance-list li {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.9rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.day-dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 0.5rem;
-}
-
-.point-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.2rem;
-}
-
+.point-menu { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.2rem; min-width: 180px; }
+.point-menu strong { font-size: 0.9rem; }
 .point-menu button { font-size: 0.8rem; }
 
+/* --- Kaart --- */
 #map-container { flex: 1; position: relative; min-width: 0; }
 #map { width: 100%; height: 100%; }
 
+/* --- Mobiel --- */
 @media (max-width: 720px) {
   main { flex-direction: column; }
   #sidebar {
     width: 100%;
     max-height: 48vh;
     border-right: none;
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--line);
     padding: 0.6rem;
     gap: 0.7rem;
   }
   #editor, #route-mode, #rec-mode, #vr-mode { gap: 0.7rem; }
-  header { padding: 0.45rem 0.7rem; }
-  header h1 { font-size: 1rem; }
-  /* Grotere tikdoelen voor onderweg */
+  header { padding: 0.5rem 0.75rem; }
+  header h1 { font-size: 0.95rem; }
+  .logo { width: 26px; height: 26px; }
   button, select { min-height: 42px; }
   #day-tabs .day-tab, #mode-tabs .mode-tab { min-height: 38px; }
 }

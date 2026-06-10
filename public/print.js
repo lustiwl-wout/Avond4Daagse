@@ -88,7 +88,7 @@ async function init() {
     .map((p, i) => ({ ...p, nr: i + 1, headMin: r1(headMin(p.along)), leaveMin: r1(leaveMin(p.along)) }));
 
   if (!apiKey) {
-    content.innerHTML = '<div class="page"><p>⚠️ Geen Google Maps API-key geconfigureerd.</p></div>';
+    content.innerHTML = '<div class="page"><p>Let op: Geen Google Maps API-key geconfigureerd.</p></div>';
     return;
   }
   // Maps JS API voor polyline-encoding (geometry) en reverse geocoding.
@@ -128,9 +128,9 @@ window.buildDoc = function () {
 
   // --- Pagina 1: totaalplan ---
   let html = `<div class="page">
-    <h1>🦺 Verkeersregelaarsplan — Dag ${day}</h1>
+    <h1>Verkeersregelaarsplan — Dag ${day}</h1>
     <p class="sub">Avond4Daagse Basisschool Syncope · wandeltempo ${vrSettings.walkKmh} km/u ·
-      passeertijd groep ${vrSettings.passMin} min · tijden in minuten na vertrek bij 🏁</p>
+      passeertijd groep ${vrSettings.passMin} min · tijden in minuten na vertrek bij start/finish</p>
     <img class="overview-map" alt="Overzichtskaart"
       src="${staticMapUrl([
         `path=${encodeURIComponent('color:0x1d4ed8ff|weight:4')}|enc:${walkEnc}`,
@@ -177,11 +177,11 @@ window.buildDoc = function () {
     }
 
     html += `<div class="page">
-      <h2><span class="dot" style="background:${team.color}"></span>${esc(team.name)} — Dag ${day} 🚲</h2>
-      <p class="sub">Grijze lijn = wandelroute · gekleurde lijn = jullie fietsroute 🏁 → posten → 🏁.
+      <h2><span class="dot" style="background:${team.color}"></span>${esc(team.name)} — Dag ${day}</h2>
+      <p class="sub">Grijze lijn = wandelroute · gekleurde lijn = jullie fietsroute start → posten → finish.
         Vertrek bij een post pas als de héle groep voorbij is.</p>
-      ${open > 0 ? `<p class="warn">⚠️ Deze route doorkruist de wandelroute op ${open} niet-goedgekeurde plek(ken) — overleg met de organisatie!</p>` : ''}
-      ${approved > 0 ? `<p class="warn">⚠️ Let op: jullie route steekt de wandelroute ${approved}× over (goedgekeurd). Stap daar af en kijk goed uit.</p>` : ''}
+      ${open > 0 ? `<p class="warn">Let op: Deze route doorkruist de wandelroute op ${open} niet-goedgekeurde plek(ken) — overleg met de organisatie!</p>` : ''}
+      ${approved > 0 ? `<p class="warn">Let op: Let op: jullie route steekt de wandelroute ${approved}× over (goedgekeurd). Stap daar af en kijk goed uit.</p>` : ''}
       <img class="team-map" alt="Teamkaart" src="${staticMapUrl(mapParts)}" />
       ${teamPosts
         .map((p, i) => {
@@ -223,7 +223,7 @@ window.buildDoc = function () {
   const unassigned = posts.filter((p) => p.team == null);
   if (unassigned.length > 0) {
     html += `<div class="page">
-      <h2 class="warn">⚠️ Nog niet toegewezen posten</h2>
+      <h2 class="warn">Let op: Nog niet toegewezen posten</h2>
       <table><tr><th>Post</th><th>Plek</th><th>Groep er</th></tr>
       ${unassigned.map((p) => `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>+${p.headMin} min</td></tr>`).join('')}
       </table>
@@ -243,9 +243,9 @@ async function fillAddresses() {
     try {
       const { results } = await geocoder.geocode({ location: { lat: p.lat, lng: p.lng } });
       const address = results[0] ? results[0].formatted_address.replace(', Nederland', '') : 'Adres onbekend';
-      targets.forEach((el) => (el.textContent = `📍 ${address}`));
+      targets.forEach((el) => (el.textContent = `${address}`));
     } catch {
-      targets.forEach((el) => (el.textContent = '📍 Adres kon niet worden opgezocht'));
+      targets.forEach((el) => (el.textContent = 'Adres kon niet worden opgezocht'));
     }
   }
 }

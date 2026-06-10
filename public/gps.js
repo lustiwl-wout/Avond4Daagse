@@ -1,3 +1,17 @@
+// Start/finish-symbool voor op de kaart: witte vlag in een donkere cirkel.
+function flagIcon() {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">' +
+    '<circle cx="17" cy="17" r="15" fill="#0f172a" stroke="#ffffff" stroke-width="2.5"/>' +
+    '<path d="M12.5 8.5v17" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>' +
+    '<path d="M12.5 9h10.5l-3 4 3 4H12.5z" fill="#ffffff"/>' +
+    '</svg>';
+  return {
+    url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+    anchor: new google.maps.Point(17, 17),
+  };
+}
+
 // Gedeelde GPS-volgfunctie voor alle pagina's. Verwacht in de pagina:
 // #gps-start, #gps-stop, #follow-label met #follow-me, en #gps-status.
 // `getMap` levert de Google Map; `onFix` (optioneel) krijgt elke positie.
@@ -15,7 +29,7 @@ function setupGps(getMap, onFix) {
 
   startBtn.addEventListener('click', () => {
     if (!navigator.geolocation) {
-      status.textContent = '⚠️ GPS wordt niet ondersteund door deze browser.';
+      status.textContent = 'Let op: GPS wordt niet ondersteund door deze browser.';
       return;
     }
     firstFix = true;
@@ -91,11 +105,11 @@ function setupGps(getMap, onFix) {
 
   function onError(err) {
     const messages = {
-      1: '⚠️ Geen toestemming voor locatie. Sta locatietoegang toe in je browser.',
-      2: '⚠️ Locatie niet beschikbaar.',
-      3: '⚠️ GPS duurt te lang, opnieuw aan het proberen…',
+      1: 'Let op: Geen toestemming voor locatie. Sta locatietoegang toe in je browser.',
+      2: 'Let op: Locatie niet beschikbaar.',
+      3: 'Let op: GPS duurt te lang, opnieuw aan het proberen…',
     };
-    status.textContent = messages[err.code] || '⚠️ GPS-fout.';
+    status.textContent = messages[err.code] || 'Let op: GPS-fout.';
     if (err.code === 1) stop();
   }
 
