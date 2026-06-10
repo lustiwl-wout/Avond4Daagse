@@ -67,6 +67,7 @@ async function initDb() {
       PRIMARY KEY (team_id, day)
     )
   `);
+  await pool.query('ALTER TABLE team_routes ADD COLUMN IF NOT EXISTS timing JSONB');
 }
 
 async function getSetting(key) {
@@ -112,18 +113,45 @@ function isValidLatLng(p) {
   return p && typeof p.lat === 'number' && typeof p.lng === 'number';
 }
 
-// Publieke configuratie: Maps-key en het start/finish-punt (zonder adres).
+// Publieke configuratie: Maps-key, start/finish-punt (zonder adres) en
+// planningsinstellingen voor de verkeersregelaars.
 app.get('/api/config', async (req, res) => {
   let startFinish = null;
+  let vrSettings = null;
   try {
     startFinish = await getSetting('start_finish');
+    vrSettings = await getSetting('vr_settings');
   } catch (err) {
-    console.error('Instelling start_finish ophalen mislukt:', err);
+    console.error('Instellingen ophalen mislukt:', err);
   }
   res.json({
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
     startFinish,
+    vrSettings,
   });
+});
+
+// Admin: planningsinstellingen (tempo's, passeertijd, marge) opslaan.
+app.put('/api/admin/vr-settings', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const { walkKmh, passMin, bikeKmh, marginMin } = req.body || {};
+  const values = [walkKmh, passMin, bikeKmh, marginMin];
+  if (!values.every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
+    return res.status(400).json({ error: 'Ongeldige planningsinstellingen.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (key, value, updated_at)
+       VALUES ('vr_settings', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify({ walkKmh, passMin, bikeKmh, marginMin })]
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Instellingen opslaan mislukt.' });
+  }
 });
 
 // Wachtwoordcontrole voor de adminpagina.
@@ -323,7 +351,6 @@ app.put('/api/admin/crossings/:day', async (req, res) => {
 });
 
 const TEAM_COLORS = ['#f97316', '#0ea5e9', '#84cc16', '#e11d48', '#8b5cf6', '#14b8a6', '#a16207', '#64748b'];
-const TEAM_MODES = ['WALKING', 'BICYCLING', 'DRIVING'];
 
 // Publiek: teams (de verkeersregelaarsweergave heeft geen wachtwoord).
 app.get('/api/teams', async (req, res) => {
@@ -340,15 +367,15 @@ app.get('/api/teams', async (req, res) => {
 app.post('/api/admin/teams', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
-  const { name, mode } = req.body;
+  const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
-  const teamMode = TEAM_MODES.includes(mode) ? mode : 'BICYCLING';
   try {
     const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS n FROM teams');
     const color = TEAM_COLORS[countRows[0].n % TEAM_COLORS.length];
+    // Verkeersregelaars fietsen altijd.
     const { rows } = await pool.query(
-      'INSERT INTO teams (name, color, mode) VALUES ($1, $2, $3) RETURNING id, name, color, mode',
-      [name.trim(), color, teamMode]
+      "INSERT INTO teams (name, color, mode) VALUES ($1, $2, 'BICYCLING') RETURNING id, name, color, mode",
+      [name.trim(), color]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -360,13 +387,12 @@ app.post('/api/admin/teams', async (req, res) => {
 app.put('/api/admin/teams/:id', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
-  const { name, mode } = req.body;
-  if (mode && !TEAM_MODES.includes(mode)) return res.status(400).json({ error: 'Ongeldig vervoersmiddel.' });
+  const { name } = req.body;
+  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
   try {
     const { rows } = await pool.query(
-      `UPDATE teams SET name = COALESCE($1, name), mode = COALESCE($2, mode)
-       WHERE id = $3 RETURNING id, name, color, mode`,
-      [name || null, mode || null, req.params.id]
+      'UPDATE teams SET name = $1 WHERE id = $2 RETURNING id, name, color, mode',
+      [name.trim(), req.params.id]
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
     res.json(rows[0]);
@@ -404,7 +430,7 @@ app.get('/api/team-routes', async (req, res) => {
   if (!requireDb(res)) return;
   try {
     const { rows } = await pool.query(
-      'SELECT team_id, day, path, distance_m, conflicts, updated_at FROM team_routes'
+      'SELECT team_id, day, path, distance_m, conflicts, timing, updated_at FROM team_routes'
     );
     res.json(rows);
   } catch (err) {
@@ -444,7 +470,7 @@ app.put('/api/admin/team-route/:teamId/:day', async (req, res) => {
   const day = parseDay(req, res);
   if (day === null) return;
   const teamId = Number(req.params.teamId);
-  const { path: teamPath, distance_m, conflicts } = req.body;
+  const { path: teamPath, distance_m, conflicts, timing } = req.body;
   try {
     if (!teamPath) {
       await pool.query('DELETE FROM team_routes WHERE team_id = $1 AND day = $2', [teamId, day]);
@@ -454,12 +480,19 @@ app.put('/api/admin/team-route/:teamId/:day', async (req, res) => {
       return res.status(400).json({ error: 'Ongeldig teamroutepad.' });
     }
     await pool.query(
-      `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, updated_at)
-       VALUES ($1, $2, $3, $4, $5, now())
+      `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, timing, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now())
        ON CONFLICT (team_id, day) DO UPDATE
          SET path = EXCLUDED.path, distance_m = EXCLUDED.distance_m,
-             conflicts = EXCLUDED.conflicts, updated_at = now()`,
-      [teamId, day, JSON.stringify(teamPath), distance_m || null, JSON.stringify(conflicts || [])]
+             conflicts = EXCLUDED.conflicts, timing = EXCLUDED.timing, updated_at = now()`,
+      [
+        teamId,
+        day,
+        JSON.stringify(teamPath),
+        distance_m || null,
+        JSON.stringify(conflicts || []),
+        timing ? JSON.stringify(timing) : null,
+      ]
     );
     res.status(204).end();
   } catch (err) {

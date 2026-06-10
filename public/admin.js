@@ -6,7 +6,9 @@ const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 const MAX_POINTS = 25; // Directions API: maximaal 25 tussenpunten
 const DIAMOND = 'M 0 -1 L 1 0 L 0 1 L -1 0 Z';
-const MODE_LABELS = { WALKING: '🚶 Lopend', BICYCLING: '🚲 Fiets', DRIVING: '🚗 Auto' };
+
+// Planningsinstellingen (overschreven door opgeslagen waarden uit de database).
+let vrSettings = { walkKmh: 4, passMin: 8, bikeKmh: 15, marginMin: 2 };
 
 let map;
 let directionsService;
@@ -38,6 +40,7 @@ async function loadGoogleMaps() {
     return;
   }
   startFinish = config.startFinish;
+  if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${config.googleMapsApiKey}&callback=initMap`;
   script.async = true;
@@ -96,6 +99,7 @@ async function tryLogin(pwd) {
       await ensureStartFinish();
       await Promise.all([loadSavedRoutes(), loadTeams(), loadTeamRoutes()]);
       renderTeams();
+      initSettingsInputs();
     } else {
       const err = await res.json().catch(() => ({}));
       status.textContent = '⚠️ ' + (err.error || 'Inloggen mislukt.');
@@ -390,6 +394,7 @@ function updateDayLabels() {
   document.getElementById('save-btn').textContent = `💾 Opslaan als route dag ${currentDay}`;
   document.getElementById('delete-btn').textContent = `❌ Verwijder route dag ${currentDay}`;
   document.getElementById('detect-btn').textContent = `🔍 Detecteer kruisingen dag ${currentDay}`;
+  document.getElementById('autoplan-btn').textContent = `🪄 Plan teams automatisch dag ${currentDay}`;
   document.getElementById('team-routes-btn').textContent = `🧭 Bereken teamroutes dag ${currentDay}`;
 }
 
@@ -520,6 +525,89 @@ async function loadTeamRoutes() {
 function teamById(id) {
   return teams.find((t) => t.id === id) || null;
 }
+
+// --- Planningsinstellingen ---
+const SETTING_INPUTS = {
+  walkKmh: 'set-walk',
+  passMin: 'set-pass',
+  bikeKmh: 'set-bike',
+  marginMin: 'set-margin',
+};
+
+function initSettingsInputs() {
+  for (const [key, id] of Object.entries(SETTING_INPUTS)) {
+    const input = document.getElementById(id);
+    input.value = vrSettings[key];
+    input.addEventListener('change', async () => {
+      const value = Number(input.value);
+      if (!Number.isFinite(value) || value < 0) return;
+      vrSettings[key] = value;
+      await fetch('/api/admin/vr-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+        body: JSON.stringify(vrSettings),
+      });
+      setVrStatus('Instellingen opgeslagen — plan en bereken de teamroutes opnieuw.');
+    });
+  }
+}
+
+// --- Tijd- en afstandsrekenwerk ---
+function distM(a, b) {
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const lat0 = rad((a.lat + b.lat) / 2);
+  const x = (rad(b.lng) - rad(a.lng)) * Math.cos(lat0) * R;
+  const y = (rad(b.lat) - rad(a.lat)) * R;
+  return Math.hypot(x, y);
+}
+
+// Afstand (m) langs het wandelpad tot het punt op het pad dat het dichtst
+// bij `point` ligt — bepaalt wanneer de groep een oversteekpunt bereikt.
+function alongPath(path, point) {
+  let best = Infinity;
+  let bestAlong = 0;
+  let cum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const segLen = distM(a, b);
+    let t = 0;
+    if (segLen > 0) {
+      const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+      const bx = (b.lng - a.lng) * Math.cos(lat0);
+      const by = b.lat - a.lat;
+      const px = (point.lng - a.lng) * Math.cos(lat0);
+      const py = point.lat - a.lat;
+      t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
+    }
+    const proj = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    const d = distM(point, proj);
+    if (d < best) {
+      best = d;
+      bestAlong = cum + segLen * t;
+    }
+    cum += segLen;
+  }
+  return bestAlong;
+}
+
+// Minuten na vertrek waarop de kop van de groep een punt bereikt.
+function headMin(alongM) {
+  return (alongM / 1000 / vrSettings.walkKmh) * 60;
+}
+
+// Minuten waarop het team weer weg mag: pas als álle 500 wandelaars voorbij zijn.
+function leaveMin(alongM) {
+  return headMin(alongM) + vrSettings.passMin;
+}
+
+// Geschatte fietstijd in minuten (hemelsbreed × omrijfactor) voor de planner.
+function bikeMin(a, b) {
+  return ((distM(a, b) * 1.35) / 1000 / vrSettings.bikeKmh) * 60;
+}
+
+const round1 = (n) => Math.round(n * 10) / 10;
 
 // --- Kruisingen detecteren ---
 document.getElementById('detect-btn').addEventListener('click', async () => {
@@ -669,25 +757,6 @@ function renderTeams() {
     li.appendChild(label);
 
     const controls = document.createElement('span');
-    const modeSelect = document.createElement('select');
-    for (const [value, text] of Object.entries(MODE_LABELS)) {
-      const opt = document.createElement('option');
-      opt.value = value;
-      opt.textContent = text;
-      modeSelect.appendChild(opt);
-    }
-    modeSelect.value = t.mode;
-    modeSelect.addEventListener('change', async () => {
-      await fetch(`/api/admin/teams/${t.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-        body: JSON.stringify({ mode: modeSelect.value }),
-      });
-      t.mode = modeSelect.value;
-      setVrStatus(`Vervoer van ${t.name} gewijzigd — bereken de teamroutes opnieuw.`);
-    });
-    controls.appendChild(modeSelect);
-
     const delBtn = document.createElement('button');
     delBtn.textContent = '✕';
     delBtn.title = 'Team verwijderen';
@@ -732,20 +801,72 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
   }
 });
 
-// --- Teamroutes berekenen, conflicten controleren en opslaan ---
-function teamDirections(team, points) {
+// --- Teamroutes berekenen, tijden toetsen, conflicten controleren ---
+// Verkeersregelaars fietsen altijd.
+function teamDirections(points) {
   return new Promise((resolve) => {
     directionsService.route(
       {
         origin: startFinish,
         destination: startFinish,
         waypoints: points.map((p) => ({ location: { lat: p.lat, lng: p.lng }, stopover: true })),
-        travelMode: google.maps.TravelMode[team.mode] || google.maps.TravelMode.BICYCLING,
+        travelMode: google.maps.TravelMode.BICYCLING,
       },
       (result, status) => resolve({ result, status })
     );
   });
 }
+
+// --- Automatisch plannen ---
+// Verdeelt de zichtbare oversteekpunten over de teams. Een team mag pas weg
+// nadat de hele groep (500 wandelaars) voorbij is en moet zijn volgende punt
+// bereiken vóór de kop van de groep daar aankomt.
+document.getElementById('autoplan-btn').addEventListener('click', async () => {
+  const d = days[currentDay];
+  if (!d.path) return setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
+  if (teams.length === 0) return setVrStatus('⚠️ Maak eerst teams aan.');
+  const points = d.crossings.filter((c) => !c.hidden);
+  if (points.length === 0) return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
+
+  const ordered = points
+    .map((c) => ({ c, along: alongPath(d.path, c) }))
+    .sort((a, b) => a.along - b.along);
+
+  // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder post
+  // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
+  const state = teams.map((team) => ({ team, freeMin: null, pos: null }));
+  const unassigned = [];
+  for (const { c, along } of ordered) {
+    const deadline = headMin(along);
+    let best = null;
+    for (const s of state) {
+      const reachable =
+        s.pos === null || s.freeMin + bikeMin(s.pos, c) + vrSettings.marginMin <= deadline;
+      if (!reachable) continue;
+      // Kies het team dat het langst vrij is (natuurlijke rotatie/haasje-over).
+      if (!best || (s.freeMin ?? -1) < (best.freeMin ?? -1)) best = s;
+    }
+    if (best) {
+      c.team = best.team.id;
+      best.pos = c;
+      best.freeMin = leaveMin(along);
+    } else {
+      c.team = null;
+      unassigned.push(c);
+    }
+  }
+  await saveCrossings(currentDay);
+  refreshVrLayer();
+  if (unassigned.length > 0) {
+    setVrStatus(
+      `⚠️ ${unassigned.length} punt(en) kunnen met ${teams.length} team(s) niet op tijd bemand worden — voeg een team toe of verberg punten. Klik daarna op "Bereken teamroutes".`
+    );
+  } else {
+    setVrStatus(
+      `✅ Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole.`
+    );
+  }
+});
 
 document.getElementById('team-routes-btn').addEventListener('click', async () => {
   const d = days[currentDay];
@@ -753,10 +874,13 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
     return;
   }
-  setVrStatus('Teamroutes berekenen…');
+  setVrStatus('Teamroutes berekenen en toetsen…');
   const problems = [];
   for (const team of teams) {
-    const points = d.crossings.filter((c) => !c.hidden && c.team === team.id);
+    const points = d.crossings
+      .filter((c) => !c.hidden && c.team === team.id)
+      .map((c) => ({ c, along: alongPath(d.path, c) }))
+      .sort((a, b) => a.along - b.along);
     const key = `${team.id}_${currentDay}`;
     if (points.length === 0) {
       delete teamRoutes[key];
@@ -767,7 +891,7 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
       });
       continue;
     }
-    const { result, status } = await teamDirections(team, points);
+    const { result, status } = await teamDirections(points.map((p) => p.c));
     if (status !== 'OK') {
       problems.push(`route van ${team.name} kon niet berekend worden (${status})`);
       continue;
@@ -776,40 +900,86 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     const teamPath = route.overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() }));
     const distance = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
 
-    // Controleer dat de teamroute de wandelgroep nooit doorkruist.
+    // Tijdstoets: vertrekken kan pas als de hele groep voorbij is; het
+    // volgende punt moet bereikt zijn vóór de kop van de groep er is.
+    // legs[i] is de fietsleg van punt i-1 naar punt i (leg 0 = vanaf 🏁).
+    const schedule = points.map(({ c, along }) => ({
+      name: c.name,
+      headMin: round1(headMin(along)),
+      leaveMin: round1(leaveMin(along)),
+    }));
+    let feasible = true;
+    const late = [];
+    for (let i = 1; i < points.length; i++) {
+      const bikeMinutes = route.legs[i].duration.value / 60;
+      const arrive = leaveMin(points[i - 1].along) + bikeMinutes + vrSettings.marginMin;
+      const deadline = headMin(points[i].along);
+      schedule[i].arriveMin = round1(arrive);
+      if (arrive > deadline) {
+        feasible = false;
+        late.push({ point: schedule[i].name, lateMin: round1(arrive - deadline) });
+      }
+    }
+    const timing = { feasible, schedule, late };
+
+    // Doorkruist de teamroute de wandelgroep? Goedgekeurde uitzonderingen
+    // van een eerdere berekening blijven goedgekeurd (op basis van plek).
     let conflicts = [];
     const confRes = await fetch(`/api/admin/conflicts/${currentDay}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
       body: JSON.stringify({
         path: teamPath,
-        exclude: [startFinish, ...points.map((p) => ({ lat: p.lat, lng: p.lng }))],
+        exclude: [startFinish, ...points.map((p) => ({ lat: p.c.lat, lng: p.c.lng }))],
       }),
     });
-    if (confRes.ok) conflicts = (await confRes.json()).conflicts;
+    if (confRes.ok) {
+      const previous = (teamRoutes[key] && teamRoutes[key].conflicts) || [];
+      conflicts = (await confRes.json()).conflicts.map((cf) => ({
+        ...cf,
+        approved: previous.some((old) => old.approved && distM(old, cf) < 30),
+      }));
+    }
 
     await fetch(`/api/admin/team-route/${team.id}/${currentDay}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
-      body: JSON.stringify({ path: teamPath, distance_m: distance, conflicts }),
+      body: JSON.stringify({ path: teamPath, distance_m: distance, conflicts, timing }),
     });
-    teamRoutes[key] = { team_id: team.id, day: currentDay, path: teamPath, distance_m: distance, conflicts };
-    if (conflicts.length > 0) {
+    teamRoutes[key] = {
+      team_id: team.id,
+      day: currentDay,
+      path: teamPath,
+      distance_m: distance,
+      conflicts,
+      timing,
+    };
+
+    if (!feasible) {
       problems.push(
-        `⚠️ route van ${team.name} DOORKRUIST de wandelroute op ${conflicts.length} plek(ken)!`
+        `⏱ ${team.name} haalt het niet: ${late
+          .map((l) => `${l.point} (${l.lateMin} min te laat)`)
+          .join(', ')}`
+      );
+    }
+    const openConflicts = conflicts.filter((cf) => !cf.approved).length;
+    if (openConflicts > 0) {
+      problems.push(
+        `⚠️ route van ${team.name} DOORKRUIST de wandelroute op ${openConflicts} plek(ken) — los op of keur goed via het rode uitroepteken`
       );
     }
   }
   refreshVrLayer();
   if (problems.length > 0) {
-    setVrStatus('⚠️ ' + problems.join(' — ') + ' Pas de toewijzing of het vervoer aan.');
+    setVrStatus('⚠️ ' + problems.join(' — '));
   } else {
-    setVrStatus('✅ Teamroutes berekend en opgeslagen — geen enkele kruist de wandelroute.');
+    setVrStatus(
+      '✅ Teamroutes berekend: alle punten zijn op tijd bemand en geen route kruist de wandelgroep.'
+    );
   }
 });
 
 function drawTeamRoutes() {
-  const d = days[currentDay];
   for (const team of teams) {
     const tr = teamRoutes[`${team.id}_${currentDay}`];
     if (!tr || !tr.path) continue;
@@ -831,38 +1001,88 @@ function drawTeamRoutes() {
       const marker = new google.maps.Marker({
         position: conflict,
         map,
-        title: `Conflict: route van ${team.name} kruist de wandelroute hier`,
-        label: { text: '!', color: '#fff', fontWeight: 'bold' },
+        title: conflict.approved
+          ? `Goedgekeurde uitzondering: route van ${team.name} kruist hier de wandelroute`
+          : `Conflict: route van ${team.name} kruist de wandelroute hier`,
+        label: { text: conflict.approved ? '✓' : '!', color: '#fff', fontWeight: 'bold' },
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
           scale: 11,
-          fillColor: '#dc2626',
+          fillColor: conflict.approved ? '#ca8a04' : '#dc2626',
           fillOpacity: 1,
           strokeColor: '#fff',
           strokeWeight: 2,
         },
         zIndex: 1001,
       });
+      marker.addListener('click', () => openConflictMenu(team, tr, conflict, marker));
       conflictMarkers.push(marker);
     }
   }
-  void d;
+}
+
+// Menu op een conflictpunt: uitzondering goedkeuren of intrekken.
+function openConflictMenu(team, tr, conflict, marker) {
+  const div = document.createElement('div');
+  div.className = 'point-menu';
+
+  const title = document.createElement('strong');
+  title.textContent = `Route van ${team.name} kruist hier de wandelroute`;
+  div.appendChild(title);
+
+  const hint = document.createElement('span');
+  hint.textContent = conflict.approved
+    ? 'Goedgekeurde uitzondering: het team weet dat het hier moet afstappen en uitkijken.'
+    : 'Alleen goedkeuren als er echt geen andere route mogelijk is.';
+  div.appendChild(hint);
+
+  const approveBtn = document.createElement('button');
+  approveBtn.textContent = conflict.approved
+    ? '↩ Goedkeuring intrekken'
+    : '✅ Keur uitzondering goed';
+  approveBtn.addEventListener('click', async () => {
+    conflict.approved = !conflict.approved;
+    infoWindow.close();
+    await fetch(`/api/admin/team-route/${team.id}/${currentDay}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+      body: JSON.stringify({
+        path: tr.path,
+        distance_m: tr.distance_m,
+        conflicts: tr.conflicts,
+        timing: tr.timing,
+      }),
+    });
+    refreshVrLayer();
+  });
+  div.appendChild(approveBtn);
+
+  const svBtn = document.createElement('button');
+  svBtn.textContent = '👀 Bekijk in Street View';
+  svBtn.addEventListener('click', () => {
+    infoWindow.close();
+    openStreetView({ lat: conflict.lat, lng: conflict.lng });
+  });
+  div.appendChild(svBtn);
+
+  infoWindow.setContent(div);
+  infoWindow.open({ anchor: marker, map });
 }
 
 function updateVrWarnings() {
   if (editMode !== 'vr') return;
-  const conflicted = teams.filter((t) => {
+  const warnings = [];
+  for (const t of teams) {
     const tr = teamRoutes[`${t.id}_${currentDay}`];
-    return tr && (tr.conflicts || []).length > 0;
-  });
-  if (conflicted.length > 0) {
-    setVrStatus(
-      '⚠️ LET OP: ' +
-        conflicted
-          .map((t) => `route van ${t.name} doorkruist de wandelroute (rode uitroeptekens)`)
-          .join('; ') +
-        '. Pas de toewijzing of het vervoer aan en bereken opnieuw.'
-    );
+    if (!tr) continue;
+    const open = (tr.conflicts || []).filter((c) => !c.approved).length;
+    if (open > 0) warnings.push(`route van ${t.name} doorkruist de wandelroute (rode uitroeptekens)`);
+    if (tr.timing && tr.timing.feasible === false) {
+      warnings.push(`${t.name} haalt zijn punten niet op tijd (⏱)`);
+    }
+  }
+  if (warnings.length > 0) {
+    setVrStatus('⚠️ LET OP: ' + warnings.join('; ') + '. Pas de planning aan en bereken opnieuw.');
   }
 }
 

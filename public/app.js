@@ -296,29 +296,53 @@ function refreshVrView() {
       ],
     });
     vrPolylines.push(polyline);
-    if ((tr.conflicts || []).length > 0) {
-      warnings.push(`⚠️ Route van ${t.name} doorkruist de wandelroute op ${tr.conflicts.length} plek(ken)!`);
-      for (const conflict of tr.conflicts) {
-        const cm = new google.maps.Marker({
-          position: conflict,
-          map,
-          title: `Conflict: route van ${t.name} kruist de wandelroute`,
-          label: { text: '!', color: '#fff', fontWeight: 'bold' },
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 11,
-            fillColor: '#dc2626',
-            fillOpacity: 1,
-            strokeColor: '#fff',
-            strokeWeight: 2,
-          },
-          zIndex: 1001,
-        });
-        vrMarkers.push(cm);
-      }
+
+    const open = (tr.conflicts || []).filter((c) => !c.approved);
+    if (open.length > 0) {
+      warnings.push(`⚠️ Route van ${t.name} doorkruist de wandelroute op ${open.length} plek(ken)!`);
+    }
+    for (const conflict of tr.conflicts || []) {
+      const cm = new google.maps.Marker({
+        position: conflict,
+        map,
+        title: conflict.approved
+          ? `Let op (${t.name}): hier steek je de wandelroute over — stap af en kijk uit!`
+          : `Conflict: route van ${t.name} kruist de wandelroute`,
+        label: { text: conflict.approved ? '✓' : '!', color: '#fff', fontWeight: 'bold' },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 11,
+          fillColor: conflict.approved ? '#ca8a04' : '#dc2626',
+          fillOpacity: 1,
+          strokeColor: '#fff',
+          strokeWeight: 2,
+        },
+        zIndex: 1001,
+      });
+      vrMarkers.push(cm);
+    }
+    if (tr.timing && tr.timing.feasible === false) {
+      warnings.push(`⏱ Planning van ${t.name} is te krap — overleg met de organisatie.`);
     }
   }
   warningEl.textContent = warnings.join(' ');
+  renderSchedule(teamFilter, day);
+}
+
+// Tijdschema voor het gekozen team: wanneer komt de groep, wanneer mag je weg.
+function renderSchedule(teamFilter, day) {
+  const list = document.getElementById('vr-schedule');
+  list.innerHTML = '';
+  if (teamFilter === null) return;
+  const tr = teamRoutes[`${teamFilter}_${day}`];
+  if (!tr || !tr.timing || !tr.timing.schedule) return;
+  tr.timing.schedule.forEach((post, i) => {
+    const li = document.createElement('li');
+    const arrive = post.arriveMin != null ? ` · jij er: +${post.arriveMin} min` : '';
+    li.innerHTML = `<span><strong>Post ${i + 1}:</strong> ${post.name}<br>
+      <span class="route-meta">groep: +${post.headMin} min · weg mogen: +${post.leaveMin} min${arrive}</span></span>`;
+    list.appendChild(li);
+  });
 }
 
 function index2Label(marker) {

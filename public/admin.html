@@ -82,17 +82,33 @@
           </section>
 
           <section>
-            <h2>Teams</h2>
+            <h2>Teams (altijd op de fiets 🚲)</h2>
             <ul id="team-list"><li class="hint">Nog geen teams.</li></ul>
             <input type="text" id="team-name" placeholder="Naam, bijv. Team A" />
             <button id="add-team-btn">➕ Team toevoegen</button>
           </section>
 
           <section>
-            <h2>Teamroutes</h2>
+            <h2>Planning-instellingen</h2>
+            <label class="setting-row">Wandeltempo groep <span><input type="number" id="set-walk" min="1" max="8" step="0.5" /> km/u</span></label>
+            <label class="setting-row">Passeertijd groep (500 p.) <span><input type="number" id="set-pass" min="1" max="45" step="1" /> min</span></label>
+            <label class="setting-row">Fietstempo regelaars <span><input type="number" id="set-bike" min="5" max="30" step="1" /> km/u</span></label>
+            <label class="setting-row">Veiligheidsmarge <span><input type="number" id="set-margin" min="0" max="20" step="1" /> min</span></label>
+          </section>
+
+          <section>
+            <h2>Planning</h2>
             <p class="hint">
-              Berekent per team de route 🏁 → eigen punten → 🏁 (stippellijn) en
-              controleert dat die de wandelroute <strong>nooit doorkruist</strong>.
+              Automatisch plannen verdeelt de punten over de teams zó dat elk team
+              — vertrekkend nadat de héle groep voorbij is — zijn volgende punt op
+              tijd haalt.
+            </p>
+            <button id="autoplan-btn">🪄 Plan teams automatisch dag 1</button>
+            <p class="hint" style="margin-top:0.6rem">
+              Teamroutes berekenen tekent per team de fietsroute 🏁 → posten → 🏁
+              (stippellijn), toetst de <strong>tijden</strong> en controleert dat de
+              route de wandelgroep <strong>nooit doorkruist</strong>. Onvermijdelijke
+              kruisingen kun je per stuk goedkeuren via het rode uitroepteken.
             </p>
             <button id="team-routes-btn">🧭 Bereken teamroutes dag 1</button>
             <p id="vr-status" class="hint"></p>

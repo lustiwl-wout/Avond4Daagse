@@ -23,10 +23,13 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 - **Kruisingen detecteren**: vindt automatisch alle plekken waar de wandelroute een weg of fietspad kruist (wegendata via OpenStreetMap). De punten verschijnen als genummerde ruitjes op de kaart.
 - Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen.
-- **Teams** aanmaken met eigen kleur en vervoer (lopend / fiets / auto).
-- **Teamroutes berekenen**: per team de route 🏁 → eigen posten → 🏁 als stippellijn. De app controleert automatisch dat een teamroute de wandelroute **nooit doorkruist** (aanraken bij de eigen posten en start/finish mag). Gaat het mis, dan zie je rode uitroeptekens op de conflictplekken plus een waarschuwing.
+- **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
+- **Automatisch plannen**: verdeelt de punten over de teams in haasje-over-volgorde, rekening houdend met de tijden (zie hieronder).
+- **Teamroutes berekenen**: per team de fietsroute 🏁 → eigen posten → 🏁 als stippellijn, met twee controles:
+  - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
+  - **Conflictcontrole**: een teamroute mag de wandelroute **nooit doorkruisen** (aanraken bij de eigen posten en start/finish mag). Conflicten krijgen een rood uitroepteken; is er echt geen alternatief, dan kan de admin de uitzondering per punt **goedkeuren** (wordt een gele ✓ — daar geldt: afstappen en uitkijken). Goedkeuringen blijven bewaard bij herberekening.
 
-**Voor de verkeersregelaars zelf** (bezoekerspagina, geen wachtwoord): knop "🦺 Open verkeersregelaars-weergave" → kies je team → je ziet de oversteekpunten, je eigen teamroute en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
+**Voor de verkeersregelaars zelf** (bezoekerspagina, geen wachtwoord): knop "🦺 Open verkeersregelaars-weergave" → kies je team → je ziet de oversteekpunten, je eigen fietsroute, een tijdschema per post (wanneer komt de groep, wanneer mag je weg) en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
 
 ## Lokaal draaien
 
