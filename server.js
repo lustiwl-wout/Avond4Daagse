@@ -388,6 +388,32 @@ async function snapToRoads(points) {
   return snapped;
 }
 
+// Dichtstbijzijnde weg per los punt (Roads API nearestRoads).
+// Maximaal 100 punten per aanroep.
+async function nearestRoads(points) {
+  const out = [];
+  for (let start = 0; start < points.length; start += 100) {
+    const batch = points.slice(start, start + 100);
+    const param = batch.map((p) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`).join('|');
+    const url = `https://roads.googleapis.com/v1/nearestRoads?points=${encodeURIComponent(param)}&key=${SERVER_KEY}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!resp.ok || data.error) {
+      throw new Error((data.error && data.error.message) || `Roads API gaf status ${resp.status}`);
+    }
+    for (const sp of data.snappedPoints || []) {
+      out.push({
+        index: start + (sp.originalIndex || 0),
+        placeId: sp.placeId,
+        lat: sp.location.latitude,
+        lng: sp.location.longitude,
+      });
+    }
+  }
+  out.sort((a, b) => a.index - b.index);
+  return out;
+}
+
 // Straatnaam bij een punt via de Google Geocoding API.
 async function reverseStreetName(p) {
   const url =
@@ -431,25 +457,65 @@ app.post('/api/admin/crossings/:day', async (req, res) => {
     }
     const existing = existingRows[0].crossings || [];
 
-    const snapped = await snapToRoads(densifyPath(walkPath, 40));
+    const SAMPLE_M = 10;
+    const dense = densifyPath(walkPath, SAMPLE_M);
+    const candidates = [];
 
-    // Overgang naar een ander wegsegment = knooppunt/kruising.
-    const junctions = [];
+    // Signaal 1: loopt de stoet óver een weg, dan is elke wisseling van
+    // Googles wegsegment-ID langs de gesnapte route een kruispunt.
+    const snapped = await snapToRoads(dense);
     for (let i = 1; i < snapped.length; i++) {
       if (!snapped[i].placeId || snapped[i].placeId === snapped[i - 1].placeId) continue;
       const a = snapped[i - 1].location;
       const b = snapped[i].location;
       const point = { lat: (a.latitude + b.latitude) / 2, lng: (a.longitude + b.longitude) / 2 };
       const onPath = pointToPath(walkPath, point);
-      if (onPath.dist > 30) continue; // ver van de route gesnapt: overslaan
-      junctions.push({ ...point, along: onPath.along });
+      if (onPath.dist > 40) continue; // ver van de route gesnapt: overslaan
+      candidates.push({ ...point, along: onPath.along });
     }
 
-    // Knooppunten binnen 30 m samenvoegen tot één oversteekpunt.
-    junctions.sort((a, b) => a.along - b.along);
+    // Signaal 2: loopt de stoet op een fiets- of wandelpad (dat kent de
+    // Roads API niet), dan verraadt een oversteek zich doordat een weg de
+    // route maar héél kort dichtbij nadert. Een weg die lang dichtbij blijft
+    // is de weg waar de stoet langs of op loopt — geen oversteek.
+    const nearest = await nearestRoads(dense);
+    const runs = [];
+    for (const snap of nearest) {
+      const orig = dense[snap.index];
+      if (!orig) continue;
+      const dist = distanceM(orig, snap);
+      if (dist > 15) continue;
+      const last = runs[runs.length - 1];
+      if (last && last.placeId === snap.placeId && snap.index - last.endIndex <= 2) {
+        last.endIndex = snap.index;
+        if (dist < last.minDist) {
+          last.minDist = dist;
+          last.lat = snap.lat;
+          last.lng = snap.lng;
+        }
+      } else {
+        runs.push({
+          placeId: snap.placeId,
+          startIndex: snap.index,
+          endIndex: snap.index,
+          minDist: dist,
+          lat: snap.lat,
+          lng: snap.lng,
+        });
+      }
+    }
+    for (const run of runs) {
+      if ((run.endIndex - run.startIndex) * SAMPLE_M > 30) continue; // parallel: geen oversteek
+      const onPath = pointToPath(walkPath, run);
+      if (onPath.dist > 40) continue;
+      candidates.push({ lat: run.lat, lng: run.lng, along: onPath.along });
+    }
+
+    // Kandidaten binnen 30 m samenvoegen tot één oversteekpunt.
+    candidates.sort((a, b) => a.along - b.along);
     const clusters = [];
-    for (const j of junctions) {
-      if (!clusters.some((c) => distanceM(c, j) < 30)) clusters.push(j);
+    for (const c of candidates) {
+      if (!clusters.some((x) => distanceM(x, c) < 30)) clusters.push(c);
     }
 
     const crossings = [];

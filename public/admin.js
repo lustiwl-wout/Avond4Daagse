@@ -448,9 +448,7 @@ function loadDayPoints(day, waypoints) {
 function updateDayLabels() {
   document.getElementById('save-btn').textContent = `Maak route dag ${currentDay} definitief`;
   document.getElementById('delete-btn').textContent = `Verwijder route dag ${currentDay}`;
-  document.getElementById('detect-btn').textContent = `Detecteer opnieuw dag ${currentDay}`;
-  document.getElementById('autoplan-btn').textContent = `Plan teams automatisch dag ${currentDay}`;
-  document.getElementById('team-routes-btn').textContent = `Bereken teamroutes dag ${currentDay}`;
+  document.getElementById('detect-btn').textContent = `Opnieuw detecteren en plannen (dag ${currentDay})`;
   document.getElementById('print-btn').textContent = `Printversie dag ${currentDay}`;
   document.getElementById('rec-save').textContent = `Definitief dag ${currentDay}`;
   updateDraftStatus();
@@ -687,7 +685,8 @@ function initSettingsInputs() {
         headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
         body: JSON.stringify(vrSettings),
       });
-      setVrStatus('Instellingen opgeslagen — plan en bereken de teamroutes opnieuw.');
+      // Nieuwe aannames: tijden direct opnieuw toetsen.
+      await replanDay(currentDay, false);
     });
   }
 }
@@ -775,12 +774,18 @@ async function detectCrossings(day, silent = false) {
     if (res.ok) {
       d.crossings = await res.json();
       refreshVrLayer();
-      if (!silent) {
-        const visible = d.crossings.filter((c) => !c.hidden).length;
+      if (!silent && d.crossings.length === 0) {
         setVrStatus(
-          d.crossings.length === 0
-            ? 'Let op: Geen kruisingen gevonden — controleer of de route is opgeslagen en probeer opnieuw.'
-            : `${d.crossings.length} oversteekpunten gevonden (${visible} zichtbaar). Klik op een ruitje om te verbergen of een team toe te wijzen.`
+          'Let op: Geen kruisingen gevonden — controleer of de route is opgeslagen en probeer opnieuw.'
+        );
+      }
+      // Route of punten gewijzigd: direct automatisch herplannen en toetsen.
+      if (d.crossings.length > 0 && teams.length > 0) {
+        if (!silent) setVrStatus(`${d.crossings.length} oversteekpunten gevonden — teams plannen…`);
+        await replanDay(day, true);
+      } else if (!silent && d.crossings.length > 0) {
+        setVrStatus(
+          `${d.crossings.length} oversteekpunten gevonden. Maak teams aan, dan worden ze automatisch ingepland.`
         );
       }
     } else if (!silent) {
@@ -935,6 +940,8 @@ function openCrossingMenu(c, marker) {
     await saveCrossings(currentDay);
     infoWindow.close();
     refreshVrLayer();
+    // Handmatige toewijzing: routes direct opnieuw berekenen en toetsen.
+    await replanDay(currentDay, false);
   });
   div.appendChild(teamSelect);
 
@@ -954,6 +961,7 @@ function openCrossingMenu(c, marker) {
     await saveCrossings(currentDay);
     infoWindow.close();
     refreshVrLayer();
+    await replanDay(currentDay, false);
   });
   div.appendChild(hideBtn);
 
@@ -966,6 +974,7 @@ function openCrossingMenu(c, marker) {
       await saveCrossings(currentDay);
       infoWindow.close();
       refreshVrLayer();
+      await replanDay(currentDay, false);
     });
     div.appendChild(delBtn);
   }
@@ -1007,6 +1016,8 @@ function renderTeams() {
       }
       renderTeams();
       refreshVrLayer();
+      // Minder teams: automatisch herverdelen en opnieuw toetsen.
+      await replanDay(currentDay, true);
     });
     controls.appendChild(delBtn);
     li.appendChild(controls);
@@ -1027,6 +1038,8 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
     teams.push(await res.json());
     input.value = '';
     renderTeams();
+    // Extra team: automatisch herverdelen en opnieuw toetsen.
+    await replanDay(currentDay, true);
   } else {
     const err = await res.json().catch(() => ({}));
     setVrStatus('Let op: ' + (err.error || 'Team aanmaken mislukt.'));
@@ -1054,15 +1067,14 @@ function teamDirections(points) {
 // stoet (500 wandelaars) zijn punt voorbij is, en moet zijn volgende punt
 // bereiken vóórdat de kop van de stoet daar aankomt. Dicht opeenvolgende
 // punten krijgen daardoor automatisch verschillende teams.
-document.getElementById('autoplan-btn').addEventListener('click', async () => {
-  const d = days[currentDay];
-  if (!d.path) return setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
-  if (teams.length === 0) return setVrStatus('Let op: Maak eerst teams aan.');
+async function autoplanDay(day) {
+  const d = days[day];
+  if (!d.path || teams.length === 0) return;
   const ordered = d.crossings
     .filter((c) => !c.hidden)
     .map((c) => ({ c, along: alongPath(d.path, c) }))
     .sort((a, b) => a.along - b.along);
-  if (ordered.length === 0) return setVrStatus('Let op: Detecteer eerst de kruisingen.');
+  if (ordered.length === 0) return;
 
   // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder punt
   // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
@@ -1087,25 +1099,20 @@ document.getElementById('autoplan-btn').addEventListener('click', async () => {
       unassigned++;
     }
   }
-  await saveCrossings(currentDay);
+  await saveCrossings(day);
   refreshVrLayer();
   if (unassigned > 0) {
     setVrStatus(
-      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten. Klik daarna op "Bereken teamroutes".`
+      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten.`
     );
   } else {
-    setVrStatus(
-      `Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
-    );
+    setVrStatus(`Alle ${ordered.length} punten verdeeld over ${teams.length} team(s).`);
   }
-});
+}
 
-document.getElementById('team-routes-btn').addEventListener('click', async () => {
-  const d = days[currentDay];
-  if (!d.path) {
-    setVrStatus('Let op: Teken en bewaar eerst de wandelroute van deze dag.');
-    return;
-  }
+async function computeTeamRoutesForDay(day) {
+  const d = days[day];
+  if (!d.path) return;
   setVrStatus('Teamroutes berekenen en toetsen…');
   const problems = [];
   for (const team of teams) {
@@ -1113,10 +1120,10 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
       .filter((c) => !c.hidden && c.team === team.id)
       .map((c) => ({ c, along: alongPath(d.path, c) }))
       .sort((a, b) => a.along - b.along);
-    const key = `${team.id}_${currentDay}`;
+    const key = `${team.id}_${day}`;
     if (points.length === 0) {
       delete teamRoutes[key];
-      await fetch(`/api/admin/team-route/${team.id}/${currentDay}`, {
+      await fetch(`/api/admin/team-route/${team.id}/${day}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
         body: JSON.stringify({ path: null }),
@@ -1158,7 +1165,7 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     // Doorkruist de teamroute de wandelgroep? Goedgekeurde uitzonderingen
     // van een eerdere berekening blijven goedgekeurd (op basis van plek).
     let conflicts = [];
-    const confRes = await fetch(`/api/admin/conflicts/${currentDay}`, {
+    const confRes = await fetch(`/api/admin/conflicts/${day}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
       body: JSON.stringify({
@@ -1174,14 +1181,14 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
       }));
     }
 
-    await fetch(`/api/admin/team-route/${team.id}/${currentDay}`, {
+    await fetch(`/api/admin/team-route/${team.id}/${day}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
       body: JSON.stringify({ path: teamPath, distance_m: distance, conflicts, timing }),
     });
     teamRoutes[key] = {
       team_id: team.id,
-      day: currentDay,
+      day,
       path: teamPath,
       distance_m: distance,
       conflicts,
@@ -1207,10 +1214,17 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     setVrStatus('Let op: ' + problems.join(' — '));
   } else {
     setVrStatus(
-      'Teamroutes berekend: alle punten zijn op tijd bemand en geen route kruist de wandelgroep.'
+      'Planning compleet: alle punten zijn op tijd bemand en geen teamroute kruist de wandelgroep.'
     );
   }
-});
+}
+
+// De hele planningsketen: punten verdelen en teamroutes berekenen/toetsen.
+// Draait automatisch na detectie, teamwijzigingen en toewijzingen.
+async function replanDay(day, reassign) {
+  if (reassign) await autoplanDay(day);
+  await computeTeamRoutesForDay(day);
+}
 
 function drawTeamRoutes() {
   for (const team of teams) {

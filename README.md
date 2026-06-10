@@ -25,11 +25,10 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 **In de admin** (`/admin` → modus "🦺 Verkeersregelaars"):
 
-- **Kruisingen detecteren** (automatisch na het opslaan van een route): de route wordt gesnapt aan het wegennetwerk van Google (**Roads API**); elk punt waar het wegsegment wisselt is een kruising/knooppunt. Straatnamen komen van de **Google Geocoding API**. De punten verschijnen als genummerde ruitjes op de kaart.
+- **Kruisingen detecteren** (automatisch na het publiceren van een route) via twee Google-signalen: wisselingen van wegsegment-ID langs de gesnapte route (**Roads API snapToRoads** — kruispunten op wegen waar de stoet overheen loopt) én plekken waar een weg de route maar heel kort dicht nadert (**Roads API nearestRoads** — oversteken vanaf fiets-/wandelpaden die Google niet als weg kent). Straatnamen komen van de **Google Geocoding API**. De punten verschijnen als genummerde ruitjes op de kaart.
 - Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen. Klik op de kaart om **zelf een extra punt toe te voegen** (blijft staan bij herdetectie).
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
-- **Automatisch plannen**: verdeelt de punten over de teams in haasje-over-volgorde, rekening houdend met de tijden (zie hieronder).
-- **Teamroutes berekenen**: per team de fietsroute 🏁 → eigen posten → 🏁 als stippellijn, met twee controles:
+- **De planning loopt volautomatisch**: na elke routepublicatie of teamwijziging worden de punten over de teams verdeeld (haasje-over) en de fietsroutes per team (start → posten → finish, stippellijn) berekend, met twee controles:
   - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
   - **Conflictcontrole**: een teamroute mag de wandelroute **nooit doorkruisen** (aanraken bij de eigen posten en start/finish mag). Conflicten krijgen een rood uitroepteken; is er echt geen alternatief, dan kan de admin de uitzondering per punt **goedkeuren** (wordt een gele ✓ — daar geldt: afstappen en uitkijken). Goedkeuringen blijven bewaard bij herberekening.
 
