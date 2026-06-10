@@ -78,6 +78,17 @@ async function initDb() {
     )
   `);
   await pool.query('ALTER TABLE team_routes ADD COLUMN IF NOT EXISTS timing JSONB');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS route_drafts (
+      id SERIAL PRIMARY KEY,
+      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
+      waypoints JSONB NOT NULL,
+      path JSONB,
+      distance_m INTEGER,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS route_drafts_day_idx ON route_drafts (day, id DESC)');
 }
 
 async function getSetting(key) {
@@ -212,8 +223,93 @@ app.get('/api/routes', async (req, res) => {
   }
 });
 
-// Admin: route voor een dag opslaan of overschrijven.
-// waypoints = de tussenpunten; start en finish liggen vast.
+// --- Conceptversies: elke wijziging wordt automatisch bewaard ---
+
+// Laatste concept per dag (plus aantal bewaarde wijzigingen).
+app.get('/api/admin/drafts', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (day) day, waypoints, path, distance_m
+       FROM route_drafts ORDER BY day, id DESC`
+    );
+    const { rows: counts } = await pool.query(
+      'SELECT day, COUNT(*)::int AS count FROM route_drafts GROUP BY day'
+    );
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        count: (counts.find((c) => c.day === r.day) || { count: 0 }).count,
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Concepten ophalen mislukt.' });
+  }
+});
+
+// Nieuwe conceptversie bewaren (mag ook een lege route zijn).
+app.post('/api/admin/drafts/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { waypoints, path: routePath, distance_m } = req.body;
+  if (!Array.isArray(waypoints) || !waypoints.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldige punten.' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO route_drafts (day, waypoints, path, distance_m) VALUES ($1, $2, $3, $4)',
+      [day, JSON.stringify(waypoints), routePath ? JSON.stringify(routePath) : null, distance_m || null]
+    );
+    // Geschiedenis beperken tot de laatste 100 wijzigingen per dag.
+    await pool.query(
+      `DELETE FROM route_drafts WHERE day = $1 AND id NOT IN
+       (SELECT id FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 100)`,
+      [day]
+    );
+    const { rows } = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE day = $1',
+      [day]
+    );
+    res.json({ count: rows[0].count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Concept bewaren mislukt.' });
+  }
+});
+
+// Laatste wijziging terugdraaien: nieuwste concept weg, vorige terug.
+app.delete('/api/admin/drafts/:day/latest', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    await pool.query(
+      `DELETE FROM route_drafts WHERE id =
+       (SELECT id FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 1)`,
+      [day]
+    );
+    const { rows } = await pool.query(
+      'SELECT day, waypoints, path, distance_m FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 1',
+      [day]
+    );
+    const { rows: counts } = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE day = $1',
+      [day]
+    );
+    res.json({ draft: rows[0] || null, count: counts[0].count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Terugdraaien mislukt.' });
+  }
+});
+
+// Admin: route voor een dag definitief publiceren; alle conceptversies
+// worden daarna gewist. waypoints = de tussenpunten; start/finish ligt vast.
 app.put('/api/routes/:day', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
@@ -240,6 +336,8 @@ app.put('/api/routes/:day', async (req, res) => {
         distance_m || null,
       ]
     );
+    // Definitief: tussenversies zijn niet meer nodig.
+    await pool.query('DELETE FROM route_drafts WHERE day = $1', [day]);
     res.json(rows[0]);
   } catch (err) {
     console.error(err);
@@ -255,6 +353,7 @@ app.delete('/api/routes/:day', async (req, res) => {
   if (day === null) return;
   try {
     const { rowCount } = await pool.query('DELETE FROM day_routes WHERE day = $1', [day]);
+    await pool.query('DELETE FROM route_drafts WHERE day = $1', [day]);
     if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
     res.status(204).end();
   } catch (err) {

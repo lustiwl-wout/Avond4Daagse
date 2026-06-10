@@ -17,7 +17,8 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Bij de eerste keer inloggen zoekt de app dit punt automatisch op (instelbaar via de omgevingsvariabele `START_ADDRESS`); daarna kun je de 🏁-vlag nog precies goed slepen. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
-- "Opslaan als route dag X" overschrijft de route van die dag; er is precies één route per dag.
+- **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "⏪ Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
+- **"Maak route dag X definitief"** publiceert de route voor bezoekers en ruimt alle tussenversies op; er is precies één definitieve route per dag.
 - **Vastlegmodus (🎯)**: leg de route vast terwijl je hem zelf loopt — start de GPS op je telefoon en tik bij elke afslag op "Leg punt vast op mijn locatie". De route wordt direct wandelend doorgerekend en punten blijven aanklikbaar en versleepbaar.
 
 ## Verkeersregelaars

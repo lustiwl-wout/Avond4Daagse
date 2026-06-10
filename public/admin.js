@@ -31,6 +31,45 @@ let conflictMarkers = [];
 // Per dag: { points, markers, renderer, distanceM, path, crossings }
 const days = {};
 
+// Conceptbeheer: elke wijziging wordt automatisch (kort na de wijziging)
+// als conceptversie bewaard; publiceren wist de tussenversies.
+let loadingRoutes = false;
+const draftTimers = {};
+const draftCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+
+function scheduleDraftSave(day) {
+  if (loadingRoutes || !loggedIn) return;
+  clearTimeout(draftTimers[day]);
+  draftTimers[day] = setTimeout(() => saveDraft(day), 800);
+}
+
+async function saveDraft(day) {
+  const d = days[day];
+  try {
+    const res = await fetch(`/api/admin/drafts/${day}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+      body: JSON.stringify({ waypoints: d.points, path: d.path, distance_m: d.distanceM }),
+    });
+    if (res.ok) {
+      draftCounts[day] = (await res.json()).count;
+      updateDraftStatus();
+    }
+  } catch {
+    // volgende wijziging probeert het gewoon opnieuw
+  }
+}
+
+function updateDraftStatus() {
+  const n = draftCounts[currentDay];
+  const text =
+    n > 0
+      ? `📝 Concept — ${n} wijziging${n === 1 ? '' : 'en'} automatisch bewaard, nog niet definitief`
+      : '✅ Definitieve versie — geen openstaande wijzigingen';
+  document.getElementById('draft-status').textContent = text;
+  document.getElementById('draft-status-rec').textContent = text;
+}
+
 async function loadGoogleMaps() {
   const res = await fetch('/api/config');
   config = await res.json();
@@ -229,6 +268,8 @@ async function addPoint(day, point, index = null) {
     setSaveStatus(
       '⚠️ Daar kan niet gewandeld worden — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of wandelpad.'
     );
+  } else {
+    scheduleDraftSave(day);
   }
 }
 
@@ -239,6 +280,7 @@ function removePoint(day, index) {
   d.markers.splice(index, 1);
   relabelMarkers(day);
   updateRoute(day);
+  scheduleDraftSave(day);
 }
 
 function addMarker(day, point, index) {
@@ -267,6 +309,8 @@ function addMarker(day, point, index) {
       marker.setPosition(previous);
       await updateRoute(day);
       setSaveStatus('⚠️ Daar kan niet gewandeld worden — het punt is teruggezet.');
+    } else {
+      scheduleDraftSave(day);
     }
   });
   marker.addListener('click', () => openPointMenu(day, marker));
@@ -392,17 +436,31 @@ function clearDay(day) {
   d.path = null;
   d.renderer.setDirections({ routes: [] });
   updateInfo();
+  scheduleDraftSave(day);
+}
+
+// Punten van een (concept)versie in de kaart laden zonder nieuwe concepten
+// te genereren; aanroeper zet loadingRoutes.
+function loadDayPoints(day, waypoints) {
+  clearDay(day);
+  for (const p of waypoints || []) {
+    days[day].points.push(p);
+    addMarker(day, p, days[day].points.length - 1);
+  }
+  relabelMarkers(day);
+  updateRoute(day);
 }
 
 // --- UI: dagen en modus ---
 function updateDayLabels() {
-  document.getElementById('save-btn').textContent = `💾 Opslaan als route dag ${currentDay}`;
+  document.getElementById('save-btn').textContent = `✅ Maak route dag ${currentDay} definitief`;
   document.getElementById('delete-btn').textContent = `❌ Verwijder route dag ${currentDay}`;
   document.getElementById('detect-btn').textContent = `🔄 Detecteer opnieuw dag ${currentDay}`;
   document.getElementById('autoplan-btn').textContent = `🪄 Plan teams automatisch dag ${currentDay}`;
   document.getElementById('team-routes-btn').textContent = `🧭 Bereken teamroutes dag ${currentDay}`;
   document.getElementById('print-btn').textContent = `🖨 Printversie dag ${currentDay}`;
-  document.getElementById('rec-save').textContent = `💾 Opslaan dag ${currentDay}`;
+  document.getElementById('rec-save').textContent = `✅ Definitief dag ${currentDay}`;
+  updateDraftStatus();
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
@@ -485,19 +543,22 @@ function setVrStatus(text) {
 async function saveCurrentDay() {
   const d = days[currentDay];
   if (d.points.length < 1) return setSaveStatus('Zet eerst minimaal 1 tussenpunt op de kaart.');
+  clearTimeout(draftTimers[currentDay]);
   const res = await fetch(`/api/routes/${currentDay}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
     body: JSON.stringify({ waypoints: d.points, path: d.path, distance_m: d.distanceM }),
   });
   if (res.ok) {
-    setSaveStatus(`✅ Route dag ${currentDay} opgeslagen!`);
+    draftCounts[currentDay] = 0;
+    updateDraftStatus();
+    setSaveStatus(`✅ Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
     // Route gewijzigd: oversteekpunten op de achtergrond opnieuw detecteren
     // (verborgen punten en teamtoewijzingen blijven behouden).
     detectCrossings(currentDay, true);
   } else {
     const err = await res.json().catch(() => ({}));
-    setSaveStatus('⚠️ ' + (err.error || 'Opslaan mislukt.'));
+    setSaveStatus('⚠️ ' + (err.error || 'Publiceren mislukt.'));
   }
 }
 
@@ -514,9 +575,14 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
     headers: { 'x-admin-password': password },
   });
   if (res.ok || res.status === 404) {
+    loadingRoutes = true;
     clearDay(currentDay);
+    loadingRoutes = false;
+    clearTimeout(draftTimers[currentDay]);
+    draftCounts[currentDay] = 0;
     days[currentDay].crossings = [];
     refreshVrLayer();
+    updateDraftStatus();
     setSaveStatus(`Route dag ${currentDay} verwijderd.`);
   } else {
     const err = await res.json().catch(() => ({}));
@@ -524,26 +590,65 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
   }
 });
 
-// --- Opgeslagen routes inladen ---
+// --- Opgeslagen routes inladen (concept gaat vóór de definitieve versie) ---
 async function loadSavedRoutes() {
+  loadingRoutes = true;
   try {
     const res = await fetch('/api/routes');
     if (!res.ok) throw new Error();
     const rows = await res.json();
     for (const row of rows) {
-      clearDay(row.day);
       days[row.day].crossings = row.crossings || [];
-      for (const p of row.waypoints) {
-        days[row.day].points.push(p);
-        addMarker(row.day, p, days[row.day].points.length - 1);
+      loadDayPoints(row.day, row.waypoints);
+    }
+    const draftsRes = await fetch('/api/admin/drafts', {
+      headers: { 'x-admin-password': password },
+    });
+    if (draftsRes.ok) {
+      for (const draft of await draftsRes.json()) {
+        draftCounts[draft.day] = draft.count;
+        loadDayPoints(draft.day, draft.waypoints);
       }
-      relabelMarkers(row.day);
-      updateRoute(row.day);
     }
   } catch {
     setSaveStatus('⚠️ Opgeslagen routes laden mislukt.');
+  } finally {
+    loadingRoutes = false;
+    updateDraftStatus();
   }
 }
+
+// Laatste wijziging terugdraaien (één conceptversie terug).
+document.getElementById('revert-btn').addEventListener('click', async () => {
+  if (draftCounts[currentDay] === 0) {
+    setSaveStatus('Er zijn geen conceptwijzigingen om terug te draaien.');
+    return;
+  }
+  clearTimeout(draftTimers[currentDay]);
+  const res = await fetch(`/api/admin/drafts/${currentDay}/latest`, {
+    method: 'DELETE',
+    headers: { 'x-admin-password': password },
+  });
+  if (!res.ok) {
+    setSaveStatus('⚠️ Terugdraaien mislukt.');
+    return;
+  }
+  const data = await res.json();
+  draftCounts[currentDay] = data.count;
+  loadingRoutes = true;
+  if (data.draft) {
+    loadDayPoints(currentDay, data.draft.waypoints);
+  } else {
+    // Geen concepten meer: terug naar de definitieve versie.
+    const pubRes = await fetch('/api/routes');
+    const rows = pubRes.ok ? await pubRes.json() : [];
+    const row = rows.find((r) => r.day === currentDay);
+    loadDayPoints(currentDay, row ? row.waypoints : []);
+  }
+  loadingRoutes = false;
+  updateDraftStatus();
+  setSaveStatus('⏪ Vorige versie hersteld.');
+});
 
 // =====================================================================
 // Verkeersregelaarsmodus
@@ -934,52 +1039,78 @@ function teamDirections(points) {
 }
 
 // --- Automatisch plannen ---
-// Verdeelt de zichtbare oversteekpunten over de teams. Een team mag pas weg
-// nadat de hele groep (500 wandelaars) voorbij is en moet zijn volgende punt
+// Punten die dicht bij elkaar liggen (bv. de armen van één rotonde of
+// kruispunt) vormen samen één post: één team dekt ze tegelijk af en hoeft er
+// niet tussen te reizen. Een team mag pas weg nadat de hele groep (500
+// wandelaars) het hele knooppunt voorbij is en moet zijn volgende post
 // bereiken vóór de kop van de groep daar aankomt.
+const POST_CLUSTER_M = 80;
+
+function buildPosts(d) {
+  const ordered = d.crossings
+    .filter((c) => !c.hidden)
+    .map((c) => ({ c, along: alongPath(d.path, c) }))
+    .sort((a, b) => a.along - b.along);
+  const posts = [];
+  for (const item of ordered) {
+    const last = posts[posts.length - 1];
+    if (last && distM(last.items[last.items.length - 1].c, item.c) < POST_CLUSTER_M) {
+      last.items.push(item);
+    } else {
+      posts.push({ items: [item] });
+    }
+  }
+  for (const post of posts) {
+    post.headMin = headMin(post.items[0].along); // kop van de groep bij het eerste punt
+    post.leaveMin = leaveMin(post.items[post.items.length - 1].along); // weg na het laatste punt
+    post.pos = post.items[Math.floor(post.items.length / 2)].c;
+  }
+  return posts;
+}
+
 document.getElementById('autoplan-btn').addEventListener('click', async () => {
   const d = days[currentDay];
   if (!d.path) return setVrStatus('⚠️ Teken en bewaar eerst de wandelroute van deze dag.');
   if (teams.length === 0) return setVrStatus('⚠️ Maak eerst teams aan.');
-  const points = d.crossings.filter((c) => !c.hidden);
-  if (points.length === 0) return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
+  if (d.crossings.filter((c) => !c.hidden).length === 0) {
+    return setVrStatus('⚠️ Detecteer eerst de kruisingen.');
+  }
 
-  const ordered = points
-    .map((c) => ({ c, along: alongPath(d.path, c) }))
-    .sort((a, b) => a.along - b.along);
+  const posts = buildPosts(d);
 
   // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder post
-  // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
+  // kunnen vooraf klaarstaan en halen hun eerste post dus altijd.
   const state = teams.map((team) => ({ team, freeMin: null, pos: null }));
-  const unassigned = [];
-  for (const { c, along } of ordered) {
-    const deadline = headMin(along);
+  let unassigned = 0;
+  for (const post of posts) {
     let best = null;
     for (const s of state) {
       const reachable =
-        s.pos === null || s.freeMin + bikeMin(s.pos, c) + vrSettings.marginMin <= deadline;
+        s.pos === null ||
+        s.freeMin + bikeMin(s.pos, post.pos) + vrSettings.marginMin <= post.headMin;
       if (!reachable) continue;
       // Kies het team dat het langst vrij is (natuurlijke rotatie/haasje-over).
       if (!best || (s.freeMin ?? -1) < (best.freeMin ?? -1)) best = s;
     }
+    for (const { c } of post.items) c.team = best ? best.team.id : null;
     if (best) {
-      c.team = best.team.id;
-      best.pos = c;
-      best.freeMin = leaveMin(along);
+      best.pos = post.pos;
+      best.freeMin = post.leaveMin;
     } else {
-      c.team = null;
-      unassigned.push(c);
+      unassigned++;
     }
   }
   await saveCrossings(currentDay);
   refreshVrLayer();
-  if (unassigned.length > 0) {
+  const clustered = posts.filter((p) => p.items.length > 1).length;
+  const clusterNote = clustered > 0 ? ` (${clustered} knooppunt(en) met meerdere punten tellen als één post)` : '';
+  if (unassigned > 0) {
     setVrStatus(
-      `⚠️ ${unassigned.length} punt(en) kunnen met ${teams.length} team(s) niet op tijd bemand worden — voeg een team toe of verberg punten. Klik daarna op "Bereken teamroutes".`
+      `⚠️ ${unassigned} van de ${posts.length} posten kunnen met ${teams.length} team(s) niet op tijd bemand worden — voeg een team toe of verberg punten${clusterNote}. Klik daarna op "Bereken teamroutes".`
     );
   } else {
     setVrStatus(
-      `✅ Alle ${ordered.length} punten verdeeld over ${teams.length} team(s). Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole.`
+      `✅ ${posts.length} posten verdeeld over ${teams.length} team(s)${clusterNote}. Klik nu op "Bereken teamroutes" voor de definitieve tijds- en conflictcontrole met echte fietstijden.`
     );
   }
 });
@@ -1016,8 +1147,10 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     const teamPath = route.overview_path.map((p) => ({ lat: p.lat(), lng: p.lng() }));
     const distance = route.legs.reduce((sum, leg) => sum + leg.distance.value, 0);
 
-    // Tijdstoets: vertrekken kan pas als de hele groep voorbij is; het
-    // volgende punt moet bereikt zijn vóór de kop van de groep er is.
+    // Tijdstoets: vertrekken kan pas als de hele groep voorbij is; de
+    // volgende post moet bereikt zijn vóór de kop van de groep er is.
+    // Punten binnen één knooppunt (< POST_CLUSTER_M) zijn samen één post:
+    // daartussen wordt niet gereisd en geldt geen deadline.
     // legs[i] is de fietsleg van punt i-1 naar punt i (leg 0 = vanaf 🏁).
     const schedule = points.map(({ c, along }) => ({
       name: c.name,
@@ -1026,15 +1159,22 @@ document.getElementById('team-routes-btn').addEventListener('click', async () =>
     }));
     let feasible = true;
     const late = [];
+    let prevLeave = leaveMin(points[0].along);
     for (let i = 1; i < points.length; i++) {
-      const bikeMinutes = route.legs[i].duration.value / 60;
-      const arrive = leaveMin(points[i - 1].along) + bikeMinutes + vrSettings.marginMin;
       const deadline = headMin(points[i].along);
+      if (distM(points[i - 1].c, points[i].c) < POST_CLUSTER_M) {
+        // Zelfde post: team staat er al; vertrek pas als de groep ook hier voorbij is.
+        prevLeave = Math.max(prevLeave, leaveMin(points[i].along));
+        continue;
+      }
+      const bikeMinutes = route.legs[i].duration.value / 60;
+      const arrive = prevLeave + bikeMinutes + vrSettings.marginMin;
       schedule[i].arriveMin = round1(arrive);
       if (arrive > deadline) {
         feasible = false;
         late.push({ point: schedule[i].name, lateMin: round1(arrive - deadline) });
       }
+      prevLeave = leaveMin(points[i].along);
     }
     const timing = { feasible, schedule, late };
 

@@ -57,15 +57,22 @@
               <span id="point-count">0 tussenpunten</span>
               <strong id="distance">0,0 km</strong>
             </div>
+            <p id="draft-status" class="hint"></p>
             <div class="button-row">
               <button id="undo-btn">↩ Laatste punt weg</button>
               <button id="clear-btn">🗑 Wis kaart</button>
             </div>
+            <button id="revert-btn">⏪ Herstel vorige versie</button>
           </section>
 
           <section>
-            <h2>Opslaan</h2>
-            <button id="save-btn">💾 Opslaan als route dag 1</button>
+            <h2>Definitief maken</h2>
+            <p class="hint">
+              Elke wijziging wordt automatisch als concept bewaard — bezoekers
+              zien alleen de definitieve versie. Definitief maken publiceert de
+              route en wist alle tussenversies.
+            </p>
+            <button id="save-btn" class="primary">✅ Maak route dag 1 definitief</button>
             <button id="delete-btn">❌ Verwijder route dag 1</button>
           </section>
         </div>
@@ -92,9 +99,10 @@
               <span id="rec-count">0 tussenpunten</span>
               <strong id="rec-distance">0,0 km</strong>
             </div>
+            <p id="draft-status-rec" class="hint"></p>
             <div class="button-row">
               <button id="rec-undo">↩ Laatste punt weg</button>
-              <button id="rec-save" class="primary">💾 Opslaan dag 1</button>
+              <button id="rec-save" class="primary">✅ Definitief dag 1</button>
             </div>
           </section>
         </div>
@@ -132,9 +140,12 @@
           <section>
             <h2>Planning</h2>
             <p class="hint">
-              Automatisch plannen verdeelt de punten over de teams zó dat elk team
-              — vertrekkend nadat de héle groep voorbij is — zijn volgende punt op
-              tijd haalt.
+              Automatisch plannen verdeelt de posten over de teams zó dat elk team
+              — vertrekkend nadat de héle groep voorbij is — zijn volgende post op
+              tijd haalt. Punten die dicht bij elkaar liggen (bv. één rotonde)
+              tellen als één post voor één team. De planner rekent met geschatte
+              fietstijden; "Bereken teamroutes" doet daarna de definitieve toets
+              met echte fietstijden van Google.
             </p>
             <button id="autoplan-btn">🪄 Plan teams automatisch dag 1</button>
             <p class="hint" style="margin-top:0.6rem">
