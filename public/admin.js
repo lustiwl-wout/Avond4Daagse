@@ -1,9 +1,9 @@
 // Adminpagina: routes voor dag 1 t/m 4 tekenen en beheren.
-// De route is altijd wandelend (TravelMode.WALKING).
-// Startpunt: Almere (pas SCHOOL_LOCATION aan naar het exacte adres van de school).
-const SCHOOL_LOCATION = { lat: 52.3508, lng: 5.2647 };
+// Start en finish liggen vast op één punt (voor alle dagen); de admin tekent
+// alleen de tussenpunten. De route is altijd wandelend (TravelMode.WALKING).
+const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
-const MAX_POINTS = 27; // Directions API: start + eind + 25 tussenpunten
+const MAX_POINTS = 25; // Directions API: maximaal 25 tussenpunten
 
 let map;
 let directionsService;
@@ -11,18 +11,22 @@ let infoWindow;
 let currentDay = 1;
 let loggedIn = false;
 let password = sessionStorage.getItem('a4d-admin-password') || '';
+let config = { googleMapsApiKey: '', startFinish: null };
+let startFinish = null;
+let startMarker = null;
 
 // Per dag: { points: [{lat,lng}], markers: [], renderer, distanceM, path }
 const days = {};
 
 async function loadGoogleMaps() {
   const res = await fetch('/api/config');
-  const config = await res.json();
+  config = await res.json();
   if (!config.googleMapsApiKey) {
     document.getElementById('map').innerHTML =
       '<p style="padding:2rem">⚠️ Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
     return;
   }
+  startFinish = config.startFinish;
   const script = document.createElement('script');
   script.src = `https://maps.googleapis.com/maps/api/js?key=${config.googleMapsApiKey}&callback=initMap`;
   script.async = true;
@@ -31,8 +35,8 @@ async function loadGoogleMaps() {
 
 window.initMap = function () {
   map = new google.maps.Map(document.getElementById('map'), {
-    center: SCHOOL_LOCATION,
-    zoom: 14,
+    center: startFinish || ALMERE_CENTER,
+    zoom: startFinish ? 15 : 13,
     streetViewControl: true, // het gele poppetje voor Street View
     mapTypeControl: false,
     fullscreenControl: false,
@@ -77,6 +81,7 @@ async function tryLogin(pwd) {
       loggedIn = true;
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('editor').classList.remove('hidden');
+      await ensureStartFinish();
       loadSavedRoutes();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -96,11 +101,97 @@ document.getElementById('admin-password').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') tryLogin(e.target.value);
 });
 
-// --- Punten bewerken ---
+// --- Start & finish (vast punt voor alle dagen) ---
+async function ensureStartFinish() {
+  if (!startFinish) {
+    setSaveStatus('Start & finish wordt opgezocht…');
+    try {
+      const adminRes = await fetch('/api/admin/config', {
+        headers: { 'x-admin-password': password },
+      });
+      const adminConfig = await adminRes.json();
+      const geocoder = new google.maps.Geocoder();
+      const { results } = await geocoder.geocode({
+        address: adminConfig.startAddress,
+        region: 'NL',
+      });
+      const loc = results[0].geometry.location;
+      startFinish = { lat: loc.lat(), lng: loc.lng() };
+      await saveStartFinish();
+      setSaveStatus('✅ Start & finish automatisch ingesteld.');
+    } catch (err) {
+      console.error('Geocoderen mislukt:', err);
+      startFinish = { ...ALMERE_CENTER };
+      setSaveStatus(
+        '⚠️ Adres opzoeken lukte niet (Geocoding API ingeschakeld?). Sleep de 🏁 naar de juiste plek — dat wordt automatisch bewaard.'
+      );
+    }
+  }
+  placeStartMarker();
+  map.panTo(startFinish);
+  map.setZoom(15);
+}
+
+function placeStartMarker() {
+  if (startMarker) startMarker.setMap(null);
+  startMarker = new google.maps.Marker({
+    position: startFinish,
+    map,
+    draggable: true,
+    title: 'Start & finish — versleep om te corrigeren',
+    label: { text: '🏁', fontSize: '14px' },
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 13,
+      fillColor: '#0f172a',
+      fillOpacity: 1,
+      strokeColor: '#fff',
+      strokeWeight: 2,
+    },
+    zIndex: 999,
+  });
+  startMarker.addListener('click', () => {
+    const div = document.createElement('div');
+    div.className = 'point-menu';
+    const title = document.createElement('strong');
+    title.textContent = 'Start & finish';
+    div.appendChild(title);
+    const svBtn = document.createElement('button');
+    svBtn.textContent = '👀 Bekijk in Street View';
+    svBtn.addEventListener('click', () => {
+      infoWindow.close();
+      openStreetView(startFinish);
+    });
+    div.appendChild(svBtn);
+    infoWindow.setContent(div);
+    infoWindow.open({ anchor: startMarker, map });
+  });
+  startMarker.addListener('dragend', async () => {
+    startFinish = {
+      lat: startMarker.getPosition().lat(),
+      lng: startMarker.getPosition().lng(),
+    };
+    await saveStartFinish();
+    for (let day = 1; day <= 4; day++) {
+      if (days[day].points.length > 0) updateRoute(day);
+    }
+    setSaveStatus('✅ Start & finish verplaatst. Sla de dagen opnieuw op om de routes bij te werken.');
+  });
+}
+
+async function saveStartFinish() {
+  await fetch('/api/admin/start-finish', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
+    body: JSON.stringify(startFinish),
+  });
+}
+
+// --- Tussenpunten bewerken ---
 function addPoint(day, point, index = null) {
   const d = days[day];
   if (d.points.length >= MAX_POINTS) {
-    alert(`Maximaal ${MAX_POINTS} punten per route.`);
+    alert(`Maximaal ${MAX_POINTS} tussenpunten per route.`);
     return;
   }
   if (index === null) index = d.points.length;
@@ -157,8 +248,16 @@ function openPointMenu(day, marker) {
   div.className = 'point-menu';
 
   const title = document.createElement('strong');
-  title.textContent = `Punt ${index + 1} van ${d.points.length}`;
+  title.textContent = `Tussenpunt ${index + 1} van ${d.points.length}`;
   div.appendChild(title);
+
+  const svBtn = document.createElement('button');
+  svBtn.textContent = '👀 Bekijk in Street View';
+  svBtn.addEventListener('click', () => {
+    infoWindow.close();
+    openStreetView(d.points[index]);
+  });
+  div.appendChild(svBtn);
 
   const delBtn = document.createElement('button');
   delBtn.textContent = '🗑 Verwijder dit punt';
@@ -185,10 +284,19 @@ function openPointMenu(day, marker) {
   infoWindow.open({ anchor: marker, map });
 }
 
-// --- Route berekenen (altijd wandelend) ---
+// Ingebouwde Street View van de kaart openen op een punt; sluiten via het
+// kruisje linksboven in het panorama.
+function openStreetView(point) {
+  const pano = map.getStreetView();
+  pano.setPosition(point);
+  pano.setPov({ heading: 0, pitch: 0 });
+  pano.setVisible(true);
+}
+
+// --- Route berekenen: altijd wandelend, altijd van en naar start/finish ---
 function updateRoute(day) {
   const d = days[day];
-  if (d.points.length < 2) {
+  if (d.points.length < 1 || !startFinish) {
     d.renderer.setDirections({ routes: [] });
     d.distanceM = 0;
     d.path = null;
@@ -197,9 +305,9 @@ function updateRoute(day) {
   }
   directionsService.route(
     {
-      origin: d.points[0],
-      destination: d.points[d.points.length - 1],
-      waypoints: d.points.slice(1, -1).map((p) => ({ location: p, stopover: false })),
+      origin: startFinish,
+      destination: startFinish,
+      waypoints: d.points.map((p) => ({ location: p, stopover: false })),
       travelMode: google.maps.TravelMode.WALKING,
     },
     (result, status) => {
@@ -218,7 +326,7 @@ function updateRoute(day) {
 
 function updateInfo() {
   const d = days[currentDay];
-  document.getElementById('point-count').textContent = `${d.points.length} punten`;
+  document.getElementById('point-count').textContent = `${d.points.length} tussenpunten`;
   document.getElementById('distance').textContent =
     (d.distanceM / 1000).toFixed(1).replace('.', ',') + ' km';
 }
@@ -256,12 +364,11 @@ document.getElementById('clear-btn').addEventListener('click', () => clearDay(cu
 
 function setSaveStatus(text) {
   document.getElementById('save-status').textContent = text;
-  setTimeout(() => (document.getElementById('save-status').textContent = ''), 5000);
 }
 
 document.getElementById('save-btn').addEventListener('click', async () => {
   const d = days[currentDay];
-  if (d.points.length < 2) return setSaveStatus('Een route heeft minimaal 2 punten nodig.');
+  if (d.points.length < 1) return setSaveStatus('Zet eerst minimaal 1 tussenpunt op de kaart.');
   const res = await fetch(`/api/routes/${currentDay}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', 'x-admin-password': password },
@@ -305,7 +412,6 @@ async function loadSavedRoutes() {
       relabelMarkers(row.day);
       updateRoute(row.day);
     }
-    if (rows.length > 0) map.panTo(rows[0].waypoints[0]);
   } catch {
     setSaveStatus('⚠️ Opgeslagen routes laden mislukt.');
   }

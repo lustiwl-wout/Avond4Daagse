@@ -12,8 +12,9 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 ## Routes beheren (`/admin`)
 
 - Log in met het beheerwachtwoord (`ADMIN_PASSWORD`).
-- Kies een dag en klik op de kaart om punten toe te voegen — de route volgt **altijd wandelend** de straten (Google Directions, wandelmodus) en je ziet live de afstand in km.
-- Elk punt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu om hem te verwijderen of er een nieuw punt tussen te voegen.
+- **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Bij de eerste keer inloggen zoekt de app dit punt automatisch op (instelbaar via de omgevingsvariabele `START_ADDRESS`); daarna kun je de 🏁-vlag nog precies goed slepen. Bezoekers zien alleen de vlag, geen adres.
+- Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
+- Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - "Opslaan als route dag X" overschrijft de route van die dag; er is precies één route per dag.
 
 ## Lokaal draaien
@@ -28,11 +29,12 @@ npm start              # http://localhost:3000
 ## Stap 1 — Google Maps API-key
 
 1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project aan.
-2. Schakel onder **APIs & Services → Library** deze twee API's in:
+2. Schakel onder **APIs & Services → Library** deze drie API's in:
    - **Maps JavaScript API** (kaart + Street View)
    - **Directions API** (wandelroutes over straten)
+   - **Geocoding API** (eenmalig het start/finish-adres opzoeken)
 3. Maak onder **Credentials** een API-key aan.
-4. Belangrijk: beperk de key onder *Application restrictions* tot je website-URL (HTTP referrers), bijv. `https://jouw-app.onrender.com/*`, en onder *API restrictions* tot de twee bovenstaande API's — de key is zichtbaar in de browser.
+4. Belangrijk: beperk de key onder *Application restrictions* tot je website-URL (HTTP referrers), bijv. `https://jouw-app.onrender.com/*`, en onder *API restrictions* tot de drie bovenstaande API's — de key is zichtbaar in de browser.
 5. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
 
 ## Stap 2 — Neon database
