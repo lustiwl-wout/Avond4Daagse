@@ -27,7 +27,8 @@
           <h2>Modus</h2>
           <div id="mode-tabs">
             <button id="mode-route" class="mode-tab active">🗺 Route</button>
-            <button id="mode-vr" class="mode-tab">🦺 Verkeersregelaars</button>
+            <button id="mode-rec" class="mode-tab">🎯 Vastleggen</button>
+            <button id="mode-vr" class="mode-tab">🦺 Verkeer</button>
           </div>
         </section>
 
@@ -66,6 +67,35 @@
             <h2>Opslaan</h2>
             <button id="save-btn">💾 Opslaan als route dag 1</button>
             <button id="delete-btn">❌ Verwijder route dag 1</button>
+          </section>
+        </div>
+
+        <div id="rec-mode" class="hidden">
+          <section>
+            <h2>Route vastleggen tijdens het lopen</h2>
+            <p class="hint">
+              Start de GPS en loop de route. Tik bij elke afslag of elk markant
+              punt op <strong>"Leg punt vast"</strong> — de route wordt direct
+              wandelend doorgerekend. Punten blijven gewoon aanklikbaar en
+              versleepbaar. Vergeet niet op te slaan!
+            </p>
+            <div class="button-row">
+              <button id="gps-start" class="primary">📍 Start GPS</button>
+              <button id="gps-stop" class="danger hidden">⏹ Stop GPS</button>
+            </div>
+            <label id="follow-label" class="hidden">
+              <input type="checkbox" id="follow-me" checked /> Kaart volgt mij
+            </label>
+            <p id="gps-status" class="hint"></p>
+            <button id="rec-add" class="primary big">➕ Leg punt vast op mijn locatie</button>
+            <div id="route-info-rec" class="route-info">
+              <span id="rec-count">0 tussenpunten</span>
+              <strong id="rec-distance">0,0 km</strong>
+            </div>
+            <div class="button-row">
+              <button id="rec-undo">↩ Laatste punt weg</button>
+              <button id="rec-save" class="primary">💾 Opslaan dag 1</button>
+            </div>
           </section>
         </div>
 
@@ -111,6 +141,7 @@
               kruisingen kun je per stuk goedkeuren via het rode uitroepteken.
             </p>
             <button id="team-routes-btn">🧭 Bereken teamroutes dag 1</button>
+            <button id="print-btn">🖨 Printversie dag 1</button>
             <p id="vr-status" class="hint"></p>
           </section>
         </div>
@@ -129,6 +160,7 @@
     </div>
   </main>
 
+  <script src="gps.js"></script>
   <script src="admin.js"></script>
 </body>
 </html>

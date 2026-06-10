@@ -19,6 +19,16 @@ app.get('/admin', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
+// Verkeersregelaars werken vanaf /verkeer (geen wachtwoord nodig).
+app.get('/verkeer', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'verkeer.html'));
+});
+
+// Printversie van het verkeersregelaarsplan.
+app.get('/print', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'print.html'));
+});
+
 let pool = null;
 if (process.env.DATABASE_URL) {
   pool = new Pool({

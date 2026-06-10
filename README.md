@@ -6,8 +6,10 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 | URL | Voor wie | Wat |
 |---|---|---|
-| `/` | Iedereen | Routes van dag 1 t/m 4 bekijken (elk een eigen kleur), afstanden, GPS aan om jezelf op de kaart te volgen tijdens het lopen, Street View via het gele poppetje |
-| `/admin` | Beheer (wachtwoord) | Routes tekenen en beheren |
+| `/` | Iedereen | Routes van dag 1 t/m 4 bekijken (elk een eigen kleur), afstanden, GPS aan om jezelf op de kaart te volgen tijdens het lopen, Street View via het gele poppetje. Mobiel-eerst opgezet. |
+| `/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + fietsroute + tijdschema zien, GPS starten. Mobiel-eerst opgezet. |
+| `/admin` | Beheer (wachtwoord) | Routes tekenen (ook al lopend vastleggen via GPS), kruisingen, teams en planning beheren |
+| `/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
 ## Routes beheren (`/admin`)
 
@@ -16,6 +18,7 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - "Opslaan als route dag X" overschrijft de route van die dag; er is precies één route per dag.
+- **Vastlegmodus (🎯)**: leg de route vast terwijl je hem zelf loopt — start de GPS op je telefoon en tik bij elke afslag op "Leg punt vast op mijn locatie". De route wordt direct wandelend doorgerekend en punten blijven aanklikbaar en versleepbaar.
 
 ## Verkeersregelaars
 
@@ -29,7 +32,9 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
   - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
   - **Conflictcontrole**: een teamroute mag de wandelroute **nooit doorkruisen** (aanraken bij de eigen posten en start/finish mag). Conflicten krijgen een rood uitroepteken; is er echt geen alternatief, dan kan de admin de uitzondering per punt **goedkeuren** (wordt een gele ✓ — daar geldt: afstappen en uitkijken). Goedkeuringen blijven bewaard bij herberekening.
 
-**Voor de verkeersregelaars zelf** (bezoekerspagina, geen wachtwoord): knop "🦺 Open verkeersregelaars-weergave" → kies je team → je ziet de oversteekpunten, je eigen fietsroute, een tijdschema per post (wanneer komt de groep, wanneer mag je weg) en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
+**Voor de verkeersregelaars zelf** (`/verkeer`, geen wachtwoord): kies je team → je ziet de oversteekpunten, je eigen fietsroute, een tijdschema per post (wanneer komt de groep, wanneer mag je weg) en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
+
+**Printversie** (`/print?day=N`, knop in de admin): pagina 1 is het totaalplan (overzichtskaart + tabel met alle posten, tijden en teams), daarna per team een eigen deel met hun fietsroutekaart en per post het adres, een detailkaartje en Street View-foto's vanuit vier windrichtingen. Hiervoor moeten naast de eerdere API's ook de **Maps Static API** en de **Street View Static API** ingeschakeld zijn (en in de API-restricties van de key staan).
 
 ## Lokaal draaien
 
@@ -43,12 +48,14 @@ npm start              # http://localhost:3000
 ## Stap 1 — Google Maps API-key
 
 1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project aan.
-2. Schakel onder **APIs & Services → Library** deze drie API's in:
+2. Schakel onder **APIs & Services → Library** deze vijf API's in:
    - **Maps JavaScript API** (kaart + Street View)
-   - **Directions API** (wandelroutes over straten)
-   - **Geocoding API** (eenmalig het start/finish-adres opzoeken)
+   - **Directions API** (wandel- en fietsroutes over straten)
+   - **Geocoding API** (start/finish-adres opzoeken en adressen op de printversie)
+   - **Maps Static API** (kaartafbeeldingen op de printversie)
+   - **Street View Static API** (Street View-foto's op de printversie)
 3. Maak onder **Credentials** een API-key aan.
-4. Belangrijk: beperk de key onder *Application restrictions* tot je website-URL (HTTP referrers), bijv. `https://jouw-app.onrender.com/*`, en onder *API restrictions* tot de drie bovenstaande API's — de key is zichtbaar in de browser.
+4. Belangrijk: beperk de key onder *Application restrictions* tot je website-URL (HTTP referrers), bijv. `https://jouw-app.onrender.com/*`, en onder *API restrictions* tot de vijf bovenstaande API's — de key is zichtbaar in de browser.
 5. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
 
 ## Stap 2 — Neon database

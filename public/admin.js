@@ -373,9 +373,12 @@ function updateRoute(day) {
 
 function updateInfo() {
   const d = days[currentDay];
-  document.getElementById('point-count').textContent = `${d.points.length} tussenpunten`;
-  document.getElementById('distance').textContent =
-    (d.distanceM / 1000).toFixed(1).replace('.', ',') + ' km';
+  const count = `${d.points.length} tussenpunten`;
+  const km = (d.distanceM / 1000).toFixed(1).replace('.', ',') + ' km';
+  document.getElementById('point-count').textContent = count;
+  document.getElementById('distance').textContent = km;
+  document.getElementById('rec-count').textContent = count;
+  document.getElementById('rec-distance').textContent = km;
 }
 
 function clearDay(day) {
@@ -396,6 +399,8 @@ function updateDayLabels() {
   document.getElementById('detect-btn').textContent = `🔍 Detecteer kruisingen dag ${currentDay}`;
   document.getElementById('autoplan-btn').textContent = `🪄 Plan teams automatisch dag ${currentDay}`;
   document.getElementById('team-routes-btn').textContent = `🧭 Bereken teamroutes dag ${currentDay}`;
+  document.getElementById('print-btn').textContent = `🖨 Printversie dag ${currentDay}`;
+  document.getElementById('rec-save').textContent = `💾 Opslaan dag ${currentDay}`;
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
@@ -413,18 +418,42 @@ function setEditMode(m) {
   editMode = m;
   infoWindow.close();
   document.getElementById('mode-route').classList.toggle('active', m === 'route');
+  document.getElementById('mode-rec').classList.toggle('active', m === 'rec');
   document.getElementById('mode-vr').classList.toggle('active', m === 'vr');
   document.getElementById('route-mode').classList.toggle('hidden', m !== 'route');
+  document.getElementById('rec-mode').classList.toggle('hidden', m !== 'rec');
   document.getElementById('vr-mode').classList.toggle('hidden', m !== 'vr');
-  // In verkeersregelaarsmodus geen tussenpunt-markers (wel de routes zelf).
+  // In verkeersregelaarsmodus geen tussenpunt-markers (wel de routes zelf);
+  // in route- en vastlegmodus zijn alle punten zichtbaar en aanklikbaar.
   for (let day = 1; day <= 4; day++) {
-    days[day].markers.forEach((mk) => mk.setMap(m === 'route' ? map : null));
+    days[day].markers.forEach((mk) => mk.setMap(m === 'vr' ? null : map));
   }
   refreshVrLayer();
 }
 
 document.getElementById('mode-route').addEventListener('click', () => setEditMode('route'));
+document.getElementById('mode-rec').addEventListener('click', () => setEditMode('rec'));
 document.getElementById('mode-vr').addEventListener('click', () => setEditMode('vr'));
+
+// --- Vastlegmodus: route al lopend vastleggen via GPS ---
+const gps = setupGps(() => map);
+
+document.getElementById('rec-add').addEventListener('click', () => {
+  const pos = gps.getPosition();
+  if (!pos) {
+    setSaveStatus('⚠️ Start eerst de GPS en wacht op een locatie.');
+    return;
+  }
+  addPoint(currentDay, pos);
+});
+
+document.getElementById('rec-undo').addEventListener('click', () => {
+  const d = days[currentDay];
+  if (d.points.length === 0) return;
+  removePoint(currentDay, d.points.length - 1);
+});
+
+document.getElementById('rec-save').addEventListener('click', () => saveCurrentDay());
 
 document.getElementById('undo-btn').addEventListener('click', () => {
   const d = days[currentDay];
@@ -449,7 +478,7 @@ function setVrStatus(text) {
   document.getElementById('vr-status').textContent = text;
 }
 
-document.getElementById('save-btn').addEventListener('click', async () => {
+async function saveCurrentDay() {
   const d = days[currentDay];
   if (d.points.length < 1) return setSaveStatus('Zet eerst minimaal 1 tussenpunt op de kaart.');
   const res = await fetch(`/api/routes/${currentDay}`, {
@@ -463,6 +492,12 @@ document.getElementById('save-btn').addEventListener('click', async () => {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('⚠️ ' + (err.error || 'Opslaan mislukt.'));
   }
+}
+
+document.getElementById('save-btn').addEventListener('click', () => saveCurrentDay());
+
+document.getElementById('print-btn').addEventListener('click', () => {
+  window.open(`/print?day=${currentDay}`, '_blank');
 });
 
 document.getElementById('delete-btn').addEventListener('click', async () => {

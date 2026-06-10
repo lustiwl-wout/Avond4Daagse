@@ -3,22 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>Avond4Daagse — Basisschool Syncope Almere</title>
+  <title>Verkeersregelaars — Avond4Daagse Syncope</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>🚶 Avond4Daagse</h1>
-    <p>Basisschool Syncope · Almere</p>
-    <a href="/verkeer" id="back-link">🦺 Verkeersregelaars</a>
+    <h1>🦺 Verkeersregelaars</h1>
+    <p>Avond4Daagse · Syncope</p>
+    <a href="/" id="back-link">← Routes</a>
   </header>
 
   <main>
     <aside id="sidebar">
       <section>
+        <select id="vr-team"><option value="all">Alle teams</option></select>
         <div id="day-tabs">
-          <button class="day-tab active" data-day="all">Alle</button>
-          <button class="day-tab" data-day="1">Dag 1</button>
+          <button class="day-tab active" data-day="1">Dag 1</button>
           <button class="day-tab" data-day="2">Dag 2</button>
           <button class="day-tab" data-day="3">Dag 3</button>
           <button class="day-tab" data-day="4">Dag 4</button>
@@ -36,12 +36,16 @@
         <p id="gps-status" class="hint"></p>
       </section>
 
+      <p id="vr-warning" class="hint warning"></p>
+
       <details id="info-details">
-        <summary>ℹ️ Afstanden & uitleg</summary>
-        <ul id="distance-list"><li class="hint">Laden…</li></ul>
+        <summary>📋 Mijn tijdschema & uitleg</summary>
+        <ul id="vr-schedule"><li class="hint">Kies eerst je team.</li></ul>
         <p class="hint">
-          Alle dagen starten en eindigen bij de 🏁 op de kaart. Sleep het gele
-          poppetje (rechtsonder) op de route voor Street View.
+          Ruitjes = oversteekpunten (jouw punten in jullie teamkleur), de
+          stippellijn is jullie fietsroute 🏁 → posten → 🏁. Vertrek pas als de
+          héle groep voorbij is. Een gele ✓ is een goedgekeurde oversteek van de
+          wandelroute: stap af en kijk uit. Klik op een punt voor Street View.
         </p>
       </details>
     </aside>
@@ -52,6 +56,6 @@
   </main>
 
   <script src="gps.js"></script>
-  <script src="app.js"></script>
+  <script src="verkeer.js"></script>
 </body>
 </html>
