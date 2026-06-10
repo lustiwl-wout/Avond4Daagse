@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: avond4daagse-routeplanner
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: DATABASE_URL
+        sync: false # plak hier je Neon-connectiestring in het Render-dashboard
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false # plak hier je Google Maps API-key in het Render-dashboard

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avond4Daagse Routeplanner — Basisschool Syncope Almere</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>🚶 Avond4Daagse Routeplanner</h1>
+    <p>Basisschool Syncope · Almere</p>
+  </header>
+
+  <main>
+    <aside id="sidebar">
+      <section>
+        <h2>Dag</h2>
+        <div id="day-tabs">
+          <button class="day-tab active" data-day="1">Dag 1</button>
+          <button class="day-tab" data-day="2">Dag 2</button>
+          <button class="day-tab" data-day="3">Dag 3</button>
+          <button class="day-tab" data-day="4">Dag 4</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Route tekenen</h2>
+        <p class="hint">Klik op de kaart om punten toe te voegen. De wandelroute volgt automatisch de straten. Sleep een punt om hem te verplaatsen.</p>
+        <div id="route-info">
+          <span id="point-count">0 punten</span>
+          <strong id="distance">0,0 km</strong>
+        </div>
+        <div class="button-row">
+          <button id="undo-btn">↩ Laatste punt weg</button>
+          <button id="clear-btn">🗑 Wis dag</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Street View</h2>
+        <p class="hint">Sleep het gele poppetje (rechtsonder op de kaart) op de route, of:</p>
+        <button id="streetview-btn">👀 Bekijk laatste punt in Street View</button>
+      </section>
+
+      <section>
+        <h2>Opslaan</h2>
+        <input type="text" id="route-name" placeholder="Naam, bijv. 5 km dag 1" />
+        <button id="save-btn">💾 Route opslaan</button>
+        <p id="save-status" class="hint"></p>
+      </section>
+
+      <section>
+        <h2>Opgeslagen routes</h2>
+        <ul id="route-list"><li class="hint">Laden…</li></ul>
+      </section>
+    </aside>
+
+    <div id="map-container">
+      <div id="map"></div>
+      <div id="streetview" class="hidden">
+        <button id="close-streetview">✕ Sluit Street View</button>
+        <div id="pano"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
