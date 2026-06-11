@@ -734,6 +734,7 @@ function updateDayLabels() {
   pausePlacing = false;
   updatePauseBtn();
   updateMoveTargets();
+  updateStoetBtn();
   updateDraftStatus();
 }
 
@@ -1339,6 +1340,75 @@ function openCrossingMenu(c, marker) {
 
   openMapMenu(map, marker.getLatLng(), div);
 }
+
+// --- Live stoetvolger: eigen GPS-positie delen als kop van de stoet ---
+let stoetWatchId = null;
+let stoetDay = null;
+let stoetLastSent = 0;
+
+function setStoetStatus(text) {
+  document.getElementById('stoet-status').textContent = text;
+}
+
+function updateStoetBtn() {
+  document.getElementById('stoet-btn').textContent =
+    stoetWatchId === null
+      ? `Start stoet delen (dag ${currentDay})`
+      : `Stop stoet delen (dag ${stoetDay})`;
+}
+
+async function stopStoet() {
+  if (stoetWatchId !== null) navigator.geolocation.clearWatch(stoetWatchId);
+  stoetWatchId = null;
+  setStoetStatus('');
+  if (stoetDay !== null) {
+    await fetch(api(`/admin/stoet/${stoetDay}`), { method: 'DELETE', headers: adminHeaders() }).catch(
+      () => {}
+    );
+    stoetDay = null;
+  }
+  updateStoetBtn();
+}
+
+document.getElementById('stoet-btn').addEventListener('click', () => {
+  if (stoetWatchId !== null) {
+    stopStoet();
+    return;
+  }
+  if (!navigator.geolocation) {
+    setStoetStatus('Let op: GPS wordt niet ondersteund door deze browser.');
+    return;
+  }
+  stoetDay = currentDay;
+  setStoetStatus('GPS zoeken…');
+  stoetWatchId = navigator.geolocation.watchPosition(
+    async (position) => {
+      // Hooguit elke 10 seconden versturen — vaker heeft geen zin.
+      if (Date.now() - stoetLastSent < 10000) return;
+      stoetLastSent = Date.now();
+      const res = await fetch(api(`/admin/stoet/${stoetDay}`), {
+        method: 'PUT',
+        headers: adminHeaders(true),
+        body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude }),
+      }).catch(() => null);
+      setStoetStatus(
+        res && res.ok
+          ? `Stoetpositie wordt gedeeld (dag ${stoetDay}) — laat dit scherm open.`
+          : 'Let op: positie versturen mislukt, opnieuw aan het proberen…'
+      );
+    },
+    (err) => {
+      setStoetStatus(
+        err.code === 1
+          ? 'Let op: geen toestemming voor locatie. Sta locatietoegang toe in je browser.'
+          : 'Let op: GPS-fout, opnieuw aan het proberen…'
+      );
+      if (err.code === 1) stopStoet();
+    },
+    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
+  );
+  updateStoetBtn();
+});
 
 // --- Teams beheren ---
 function renderTeams() {

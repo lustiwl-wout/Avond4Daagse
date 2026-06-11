@@ -205,6 +205,11 @@ function directionArrows(path, color, spacingM) {
   return group;
 }
 
+// Kop van de stoet (live gedeeld door de begeleider voorop).
+function stoetIcon() {
+  return htmlIcon('<div class="m-stoet"><span></span></div>', [30, 30], [15, 15]);
+}
+
 // Pauzepunt: koffiekopje-achtig 'P'-symbool.
 function pauseIcon() {
   return htmlIcon('<div class="m-dot m-pause">P</div>', [26, 26], [13, 13]);

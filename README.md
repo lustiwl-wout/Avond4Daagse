@@ -47,6 +47,15 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 **Printversie** (`/print?day=N`, knop in de admin): pagina 1 is het totaalplan (overzichtskaart + tabel met alle posten, tijden en teams), daarna per team een eigen deel met overzichtskaart en per post het adres, een detailkaartje en Street View-foto's vanuit vier windrichtingen. Hiervoor moeten naast de eerdere API's ook de **Maps Static API** en de **Street View Static API** ingeschakeld zijn (en in de API-restricties van de key staan).
 
+## Extra's
+
+- **Mededelingenbalk**: zet in de admin een mededeling ("De start van dag 3 is verplaatst") — die verschijnt als balk bovenaan de bezoekers- en verkeerspagina.
+- **QR-codes** in de admin voor de bezoekers- en verkeerspagina (poster/appgroep).
+- **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
+- **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, de afstand tot de pauze en je verwachte finishtijd; het gelopen deel van de route vervaagt op de kaart.
+- **Weer per loopdag** (Open-Meteo, zonder key) in de afstandenlijst.
+- **Live stoetvolger**: de begeleider voorop start "stoet delen" in de admin (verkeersmodus); bezoekers en verkeersregelaars zien live een pulserende stip waar de kop van de stoet is. De positie blijft alleen in het servergeheugen en verdwijnt 3 minuten na het laatste signaal.
+
 ## Lokaal draaien
 
 ```bash

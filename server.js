@@ -1267,6 +1267,40 @@ eventApi.delete('/admin/crossings/:day/:id', async (req, res) => {
   }
 });
 
+// --- Live stoetvolger ---
+// De begeleider voorop deelt zijn positie vanuit de admin; bezoekers en
+// verkeersregelaars zien die live op de kaart. Bewust in het geheugen
+// (geen database-schrijflast); ouder dan 3 minuten = niet meer tonen.
+const STOET_MAX_AGE_MS = 3 * 60 * 1000;
+const stoetPositions = new Map(); // `${eventId}:${day}` -> { lat, lng, at }
+
+eventApi.put('/admin/stoet/:day', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { lat, lng } = req.body || {};
+  if (!isValidLatLng({ lat, lng })) return res.status(400).json({ error: 'Ongeldige positie.' });
+  stoetPositions.set(`${req.event.id}:${day}`, { lat, lng, at: Date.now() });
+  res.status(204).end();
+});
+
+eventApi.delete('/admin/stoet/:day', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  stoetPositions.delete(`${req.event.id}:${day}`);
+  res.status(204).end();
+});
+
+// Publiek: actuele positie van de kop van de stoet (of null).
+eventApi.get('/stoet/:day', (req, res) => {
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const pos = stoetPositions.get(`${req.event.id}:${day}`);
+  if (!pos || Date.now() - pos.at > STOET_MAX_AGE_MS) return res.json(null);
+  res.json({ lat: pos.lat, lng: pos.lng, ageS: Math.round((Date.now() - pos.at) / 1000) });
+});
+
 // --- Teams ---
 
 const TEAM_COLORS = ['#f97316', '#0ea5e9', '#84cc16', '#e11d48', '#8b5cf6', '#14b8a6', '#a16207', '#64748b'];

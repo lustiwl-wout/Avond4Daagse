@@ -54,6 +54,7 @@ async function init() {
 
   await loadRoutes();
   loadWeather();
+  pollStoet();
 }
 
 async function loadRoutes() {
@@ -497,11 +498,46 @@ function selectDayTab(day) {
   progressAlong = null;
   paceSamples = [];
   if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
+  if (stoetMarker) {
+    stoetMarker.remove();
+    stoetMarker = null;
+  }
+  if (map) pollStoet();
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
   tab.addEventListener('click', () => selectDayTab(tab.dataset.day));
 });
+
+// --- Live stoetvolger: positie van de kop van de stoet (elke 15 s) ---
+let stoetMarker = null;
+
+async function pollStoet() {
+  if (!map) return;
+  let pos = null;
+  try {
+    const res = await fetch(api(`/stoet/${selectedDay}`));
+    if (res.ok) pos = await res.json();
+  } catch {
+    // volgende poging over 15 s
+  }
+  if (!pos) {
+    if (stoetMarker) stoetMarker.remove();
+    stoetMarker = null;
+    return;
+  }
+  if (!stoetMarker) {
+    stoetMarker = L.marker([pos.lat, pos.lng], {
+      icon: stoetIcon(),
+      zIndexOffset: 1100,
+      title: 'Kop van de stoet (live)',
+    }).addTo(map);
+    stoetMarker.bindPopup('<div class="point-menu"><strong>Kop van de stoet</strong><span>Live gedeeld door de organisatie.</span></div>');
+  }
+  stoetMarker.setLatLng([pos.lat, pos.lng]);
+}
+
+setInterval(pollStoet, 15000);
 
 const gps = setupGps(() => map, updateProgress);
 init();
