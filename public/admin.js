@@ -614,6 +614,7 @@ function updateDayLabels() {
   document.getElementById('rec-save').textContent = `Definitief dag ${currentDay}`;
   pausePlacing = false;
   updatePauseBtn();
+  updateMoveTargets();
   updateDraftStatus();
 }
 
@@ -756,6 +757,47 @@ async function saveCurrentDay() {
 }
 
 document.getElementById('save-btn').addEventListener('click', () => saveCurrentDay());
+
+// --- Route naar een andere dag verplaatsen (of dagen omwisselen) ---
+function updateMoveTargets() {
+  const select = document.getElementById('move-target');
+  select.innerHTML = '';
+  for (let day = 1; day <= 4; day++) {
+    if (day === currentDay) continue;
+    const opt = document.createElement('option');
+    opt.value = day;
+    opt.textContent = `Dag ${day}${days[day] && days[day].points.length > 0 ? ' (heeft al een route — wordt omgewisseld)' : ''}`;
+    select.appendChild(opt);
+  }
+  document.getElementById('move-btn').textContent = `Verplaats dag ${currentDay} naar de gekozen dag`;
+}
+
+document.getElementById('move-btn').addEventListener('click', async () => {
+  const target = Number(document.getElementById('move-target').value);
+  const d = days[currentDay];
+  if (!target || target === currentDay) return;
+  if (d.points.length === 0 && !d.pause && d.crossings.length === 0) {
+    setSaveStatus('Er valt op deze dag niets te verplaatsen.');
+    return;
+  }
+  const swap = days[target] && days[target].points.length > 0;
+  const vraag = swap
+    ? `Dag ${currentDay} en dag ${target} omwisselen (beide dagen hebben een route)?`
+    : `Alles van dag ${currentDay} verplaatsen naar dag ${target}?`;
+  if (!confirm(vraag)) return;
+  const res = await fetch('/api/admin/move-route', {
+    method: 'POST',
+    headers: adminHeaders(true),
+    body: JSON.stringify({ from: currentDay, to: target }),
+  });
+  if (res.ok) {
+    // Alles is server-side verhuisd; vers laden is de betrouwbaarste weg.
+    location.reload();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    setSaveStatus('Let op: ' + (err.error || 'verplaatsen mislukt.'));
+  }
+});
 
 document.getElementById('print-btn').addEventListener('click', () => {
   window.open(`/print?day=${currentDay}`, '_blank');

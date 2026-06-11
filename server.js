@@ -529,6 +529,85 @@ app.put('/api/routes/:day', async (req, res) => {
   }
 });
 
+// Admin: route (met concepten, pauzepunt, oversteekpunten, teamroutes en
+// sponsoracties) naar een andere dag verplaatsen. Heeft de doeldag al een
+// route, dan worden de twee dagen omgewisseld. De loopdag-datums blijven
+// bij hun kalenderdag.
+app.post('/api/admin/move-route', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const from = Number((req.body || {}).from);
+  const to = Number((req.body || {}).to);
+  if (![1, 2, 3, 4].includes(from) || ![1, 2, 3, 4].includes(to) || from === to) {
+    return res.status(400).json({ error: 'Ongeldige dagen.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Dagroutes omwisselen (delete + insert vanwege de primary key op dag).
+    const { rows: routeRows } = await client.query(
+      'SELECT * FROM day_routes WHERE day IN ($1, $2) FOR UPDATE',
+      [from, to]
+    );
+    await client.query('DELETE FROM day_routes WHERE day IN ($1, $2)', [from, to]);
+    for (const r of routeRows) {
+      await client.query(
+        `INSERT INTO day_routes (day, waypoints, path, distance_m, crossings, pause, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())`,
+        [
+          r.day === from ? to : from,
+          JSON.stringify(r.waypoints),
+          r.path ? JSON.stringify(r.path) : null,
+          r.distance_m,
+          r.crossings ? JSON.stringify(r.crossings) : null,
+          r.pause ? JSON.stringify(r.pause) : null,
+        ]
+      );
+    }
+
+    // Teamroutes omwisselen (primary key op team+dag, dus ook delete + insert).
+    const { rows: trRows } = await client.query(
+      'SELECT * FROM team_routes WHERE day IN ($1, $2) FOR UPDATE',
+      [from, to]
+    );
+    await client.query('DELETE FROM team_routes WHERE day IN ($1, $2)', [from, to]);
+    for (const r of trRows) {
+      await client.query(
+        `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, timing, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, now())`,
+        [
+          r.team_id,
+          r.day === from ? to : from,
+          r.path ? JSON.stringify(r.path) : null,
+          r.distance_m,
+          r.conflicts ? JSON.stringify(r.conflicts) : null,
+          r.timing ? JSON.stringify(r.timing) : null,
+        ]
+      );
+    }
+
+    // Concepten en sponsoracties hebben geen unieke dag-sleutel: direct omwisselen.
+    await client.query(
+      'UPDATE route_drafts SET day = CASE day WHEN $1 THEN $2 ELSE $1 END WHERE day IN ($1, $2)',
+      [from, to]
+    );
+    await client.query(
+      'UPDATE sponsors SET day = CASE day WHEN $1 THEN $2 ELSE $1 END WHERE day IN ($1, $2)',
+      [from, to]
+    );
+
+    await client.query('COMMIT');
+    res.status(204).end();
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Route verplaatsen mislukt:', err);
+    res.status(500).json({ error: 'Route verplaatsen mislukt.' });
+  } finally {
+    client.release();
+  }
+});
+
 // Admin: route voor een dag verwijderen.
 app.delete('/api/routes/:day', async (req, res) => {
   if (!requireDb(res)) return;
