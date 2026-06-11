@@ -44,6 +44,7 @@ function setupGps(getMap, onFix) {
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
     if (followLabel) followLabel.classList.add('hidden');
+    if (onFix) onFix(null); // de pagina kan voortgang e.d. opruimen
   }
 
   function onPosition(position) {

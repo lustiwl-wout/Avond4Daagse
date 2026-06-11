@@ -69,6 +69,8 @@ async function loadRoutes() {
   for (const row of rows) {
     const path = (row.path && row.path.length > 1 ? row.path : row.waypoints) || [];
     if (path.length < 2) continue;
+    let total = 0;
+    for (let i = 0; i < path.length - 1; i++) total += distM(path[i], path[i + 1]);
     const line = L.polyline(path.map((p) => [p.lat, p.lng]), {
       color: DAY_COLORS[row.day],
       weight: 5,
@@ -89,6 +91,8 @@ async function loadRoutes() {
       bounds: boundsOf(path),
       distance_m: row.distance_m,
       path,
+      total,
+      pauseAlong: row.pause ? nearestOnPath(path, row.pause).along : null,
       pauseMarker,
       sponsorMarkers: [],
     };
@@ -281,17 +285,89 @@ function openSponsorForm(hit) {
   openMapMenu(map, [hit.lat, hit.lng], div);
 }
 
+// --- Voortgang langs de route (GPS) ---
+// De route is een lus (start = finish) en kan stukken bevatten die je twee
+// keer loopt. Daarom onthouden we de vorige voortgang en kiezen we van alle
+// plekken op de route binnen bereik degene die daar het dichtst bij ligt —
+// zo springt de teller niet heen en weer.
+const ON_ROUTE_M = 60;
+let progressAlong = null;
+
+function routeProgress(path, pos) {
+  const candidates = [];
+  let cum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const segLen = distM(a, b);
+    let t = 0;
+    if (segLen > 0) {
+      const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+      const bx = (b.lng - a.lng) * Math.cos(lat0);
+      const by = b.lat - a.lat;
+      const px = (pos.lng - a.lng) * Math.cos(lat0);
+      const py = pos.lat - a.lat;
+      t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
+    }
+    const proj = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    const d = distM(pos, proj);
+    if (d <= ON_ROUTE_M) candidates.push({ dist: d, along: cum + segLen * t });
+    cum += segLen;
+  }
+  if (candidates.length === 0) return null;
+  if (progressAlong === null) {
+    return candidates.reduce((x, y) => (y.dist < x.dist ? y : x)).along;
+  }
+  return candidates.reduce((x, y) =>
+    Math.abs(y.along - progressAlong) < Math.abs(x.along - progressAlong) ? y : x
+  ).along;
+}
+
+function fmtDist(m) {
+  return m < 950 ? `${Math.max(0, Math.round(m / 50) * 50)} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
+}
+
+function updateProgress(pos) {
+  const box = document.getElementById('route-progress');
+  const r = routes[selectedDay];
+  if (!pos || !r) {
+    box.classList.add('hidden');
+    progressAlong = null;
+    return;
+  }
+  const along = routeProgress(r.path, pos);
+  if (along === null) {
+    // Naast de route (bv. onderweg ernaartoe): geen voortgang tonen.
+    box.classList.add('hidden');
+    progressAlong = null;
+    return;
+  }
+  progressAlong = along;
+  const left = Math.max(0, r.total - along);
+  const pct = Math.min(100, Math.round((along / r.total) * 100));
+  document.getElementById('progress-fill').style.width = pct + '%';
+  let text = `${fmtDist(along)} gelopen · nog ${fmtDist(left)} (${pct}%)`;
+  if (r.pauseAlong !== null && r.pauseAlong - along > 25) {
+    text += ` · pauze over ${fmtDist(r.pauseAlong - along)}`;
+  }
+  document.getElementById('progress-text').textContent = text;
+  box.classList.remove('hidden');
+}
+
 function selectDayTab(day) {
   selectedDay = Number(day);
   document.querySelectorAll('.day-tab').forEach((tab) => {
     tab.classList.toggle('active', Number(tab.dataset.day) === selectedDay);
   });
   applySelection();
+  // Voortgang hoort bij de gekozen dag: opnieuw bepalen met de huidige positie.
+  progressAlong = null;
+  if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
   tab.addEventListener('click', () => selectDayTab(tab.dataset.day));
 });
 
-setupGps(() => map);
+const gps = setupGps(() => map, updateProgress);
 init();

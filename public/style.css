@@ -428,3 +428,19 @@ details > *:not(summary) { margin-top: 0.5rem; }
 #map.placing.leaflet-container {
   cursor: crosshair;
 }
+
+/* Voortgang langs de route (bezoekers met GPS aan). */
+#route-progress { margin-top: 0.5rem; }
+.progress-track {
+  height: 8px;
+  background: var(--line);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--brand-grad);
+  border-radius: var(--radius-pill);
+  transition: width 0.6s ease;
+}
