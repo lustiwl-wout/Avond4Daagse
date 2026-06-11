@@ -36,7 +36,7 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - **Oversteekpunten zet de verkeersleider zelf op de kaart**: klik in de verkeersmodus op de route waar verkeersregelaars moeten staan. Het punt snapt naar de route en krijgt automatisch de straatnaam (Nominatim). De punten verschijnen als genummerde ruitjes, in routevolgorde.
 - Klik op een ruitje om een **team toe te wijzen**, **Street View** te openen of het punt te **verwijderen**.
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
-- **De planning loopt volautomatisch**: na elke routepublicatie of teamwijziging worden de punten over de teams verdeeld (haasje-over) en de fietsroutes per team (start → posten → finish, stippellijn) berekend, met twee controles:
+- **De verkeersleider wijst teams zelf toe**: klik op een ruitje en kies het team. Na elke toewijzing berekent de app automatisch de fietsroutes per team (start → posten → finish, stippellijn) en toetst twee dingen:
   - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
   - **Conflictcontrole**: een teamroute mag de wandelroute **nooit doorkruisen** (aanraken bij de eigen posten en start/finish mag). Conflicten krijgen een rood uitroepteken; is er echt geen alternatief, dan kan de admin de uitzondering per punt **goedkeuren** (wordt een gele ✓ — daar geldt: afstappen en uitkijken). Goedkeuringen blijven bewaard bij herberekening.
 

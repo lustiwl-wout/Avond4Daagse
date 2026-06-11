@@ -761,7 +761,7 @@ async function saveCurrentDay() {
     updateDraftStatus();
     setSaveStatus(`Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
     // Route gewijzigd: tijden en teamroutes kloppend houden met het nieuwe pad.
-    replanDay(currentDay, false);
+    computeTeamRoutesForDay(currentDay);
   } else {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('Let op: ' + (err.error || 'publiceren mislukt.'));
@@ -956,7 +956,7 @@ function initSettingsInputs() {
         body: JSON.stringify(vrSettings),
       });
       // Nieuwe aannames: tijden direct opnieuw toetsen.
-      await replanDay(currentDay, false);
+      await computeTeamRoutesForDay(currentDay);
     });
   }
 }
@@ -1015,11 +1015,6 @@ function headMin(alongM) {
 // Minuten waarop het team weer weg mag: pas als álle wandelaars voorbij zijn.
 function leaveMin(alongM) {
   return headMin(alongM) + vrSettings.passMin;
-}
-
-// Geschatte fietstijd in minuten (hemelsbreed × omrijfactor) voor de planner.
-function bikeMin(a, b) {
-  return ((distM(a, b) * 1.35) / 1000 / vrSettings.bikeKmh) * 60;
 }
 
 const round1 = (n) => Math.round(n * 10) / 10;
@@ -1136,7 +1131,7 @@ function openCrossingMenu(c, marker) {
     map.closePopup();
     refreshVrLayer();
     // Handmatige toewijzing: routes direct opnieuw berekenen en toetsen.
-    await replanDay(currentDay, false);
+    await computeTeamRoutesForDay(currentDay);
   });
   div.appendChild(teamSelect);
 
@@ -1154,7 +1149,7 @@ function openCrossingMenu(c, marker) {
       await saveCrossings(currentDay);
       map.closePopup();
       refreshVrLayer();
-      await replanDay(currentDay, false);
+      await computeTeamRoutesForDay(currentDay);
     })
   );
 
@@ -1191,8 +1186,8 @@ function renderTeams() {
       }
       renderTeams();
       refreshVrLayer();
-      // Minder teams: automatisch herverdelen en opnieuw toetsen.
-      await replanDay(currentDay, true);
+      // Routes en tijden opnieuw toetsen (toewijzingen aan dit team zijn weg).
+      await computeTeamRoutesForDay(currentDay);
     });
     controls.appendChild(delBtn);
     li.appendChild(controls);
@@ -1213,8 +1208,7 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
     teams.push(await res.json());
     input.value = '';
     renderTeams();
-    // Extra team: automatisch herverdelen en opnieuw toetsen.
-    await replanDay(currentDay, true);
+    setVrStatus('Team toegevoegd — wijs het via de ruitjes aan oversteekpunten toe.');
   } else {
     const err = await res.json().catch(() => ({}));
     setVrStatus('Let op: ' + (err.error || 'team aanmaken mislukt.'));
@@ -1222,54 +1216,12 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
 });
 
 // --- Automatisch plannen ---
-// Eén team bemant één punt tegelijk. Het team mag pas vertrekken als de héle
-// stoet zijn punt voorbij is, en moet zijn volgende punt bereiken vóórdat de
-// kop van de stoet daar aankomt. Dicht opeenvolgende punten krijgen daardoor
-// automatisch verschillende teams.
-async function autoplanDay(day) {
-  const d = days[day];
-  if (!d.path || teams.length === 0) return;
-  const ordered = d.crossings
-    .filter((c) => !c.hidden)
-    .map((c) => ({ c, along: alongPath(d.path, c) }))
-    .sort((a, b) => a.along - b.along);
-  if (ordered.length === 0) return;
-
-  // Elk team: wanneer het weer vrij is en waar het staat. Teams zonder punt
-  // kunnen vooraf klaarstaan en halen hun eerste punt dus altijd.
-  const state = teams.map((team) => ({ team, freeMin: null, pos: null }));
-  let unassigned = 0;
-  for (const { c, along } of ordered) {
-    const deadline = headMin(along);
-    let best = null;
-    for (const s of state) {
-      const reachable =
-        s.pos === null || s.freeMin + bikeMin(s.pos, c) + vrSettings.marginMin <= deadline;
-      if (!reachable) continue;
-      // Kies het team dat het langst vrij is (natuurlijke rotatie/haasje-over).
-      if (!best || (s.freeMin ?? -1) < (best.freeMin ?? -1)) best = s;
-    }
-    if (best) {
-      c.team = best.team.id;
-      best.pos = c;
-      best.freeMin = leaveMin(along);
-    } else {
-      c.team = null;
-      unassigned++;
-    }
-  }
-  await saveCrossings(day);
-  refreshVrLayer();
-  if (unassigned > 0) {
-    setVrStatus(
-      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verwijder punten.`
-    );
-  } else {
-    setVrStatus(`Alle ${ordered.length} punten verdeeld over ${teams.length} team(s).`);
-  }
-}
-
 // --- Teamroutes berekenen (OSRM, fietsprofiel), tijden en conflicten toetsen ---
+// De verkeersleider wijst teams zelf toe via het puntmenu; na elke
+// toewijzing of wijziging worden de routes en tijden automatisch getoetst:
+// een team bemant één punt tegelijk, mag pas vertrekken als de héle stoet
+// zijn punt voorbij is, en moet het volgende punt bereiken vóórdat de kop
+// van de stoet daar aankomt.
 async function computeTeamRoutesForDay(day) {
   const d = days[day];
   if (!d.path) return;
@@ -1367,13 +1319,6 @@ async function computeTeamRoutesForDay(day) {
   } else {
     setVrStatus('Planning compleet: alle punten zijn op tijd bemand en geen teamroute kruist de stoet.');
   }
-}
-
-// De hele planningsketen: punten verdelen en teamroutes berekenen/toetsen.
-// Draait automatisch na teamwijzigingen, toewijzingen en routepublicatie.
-async function replanDay(day, reassign) {
-  if (reassign) await autoplanDay(day);
-  await computeTeamRoutesForDay(day);
 }
 
 function drawTeamRoutes() {
