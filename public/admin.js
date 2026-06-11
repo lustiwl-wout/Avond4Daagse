@@ -42,13 +42,25 @@ function adminHeaders(json = false) {
   return h;
 }
 
+const pendingDraft = { 1: false, 2: false, 3: false, 4: false };
+
 function scheduleDraftSave(day) {
   if (loadingRoutes || !loggedIn) return;
+  pendingDraft[day] = true;
   clearTimeout(draftTimers[day]);
   draftTimers[day] = setTimeout(() => saveDraft(day), 800);
 }
 
+// Wachtende conceptopslag direct uitvoeren (zodat Ctrl+Z/herstellen de
+// allerlaatste wijziging terugdraait en niet eentje te ver springt).
+async function flushDraftSave(day) {
+  if (!pendingDraft[day]) return;
+  clearTimeout(draftTimers[day]);
+  await saveDraft(day);
+}
+
 async function saveDraft(day) {
+  pendingDraft[day] = false;
   const d = days[day];
   try {
     const res = await fetch(`/api/admin/drafts/${day}`, {
@@ -854,13 +866,14 @@ async function loadSavedRoutes() {
   }
 }
 
-// Laatste wijziging terugdraaien (één conceptversie terug).
-document.getElementById('revert-btn').addEventListener('click', async () => {
+// Laatste wijziging terugdraaien (één conceptversie terug) — via de knop
+// of met Ctrl+Z (Cmd+Z op een Mac).
+async function revertLastChange() {
+  await flushDraftSave(currentDay);
   if (draftCounts[currentDay] === 0) {
     setSaveStatus('Er zijn geen conceptwijzigingen om terug te draaien.');
     return;
   }
-  clearTimeout(draftTimers[currentDay]);
   const res = await fetch(`/api/admin/drafts/${currentDay}/latest`, {
     method: 'DELETE',
     headers: adminHeaders(),
@@ -884,6 +897,18 @@ document.getElementById('revert-btn').addEventListener('click', async () => {
   loadingRoutes = false;
   updateDraftStatus();
   setSaveStatus('Vorige versie hersteld.');
+}
+
+document.getElementById('revert-btn').addEventListener('click', () => revertLastChange());
+
+document.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.key.toLowerCase() !== 'z') return;
+  // In invoervelden doet Ctrl+Z gewoon tekst-ongedaanmaken.
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (!loggedIn || editMode === 'vr') return;
+  e.preventDefault();
+  revertLastChange();
 });
 
 // =====================================================================
