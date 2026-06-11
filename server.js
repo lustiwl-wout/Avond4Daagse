@@ -28,7 +28,7 @@ app.use(
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
-const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'favicon.ico', '']);
+const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'simulate', 'favicon.ico', '']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 let pool = null;
@@ -1180,6 +1180,7 @@ app.get('/admin', async (req, res) => {
 for (const [route, file] of [
   ['/verkeer', 'verkeer.html'],
   ['/print', 'print.html'],
+  ['/simulate', 'index.html'], // bezoekerspagina met gesimuleerde GPS (testen)
 ]) {
   app.get(route, async (req, res) => {
     const hostSlug = slugFromHost(req);
@@ -1199,6 +1200,7 @@ app.get('/:slug', (req, res) => serveEventPage(req, res, 'index.html'));
 app.get('/:slug/verkeer', (req, res) => serveEventPage(req, res, 'verkeer.html'));
 app.get('/:slug/admin', (req, res) => serveEventPage(req, res, 'admin.html'));
 app.get('/:slug/print', (req, res) => serveEventPage(req, res, 'print.html'));
+app.get('/:slug/simulate', (req, res) => serveEventPage(req, res, 'index.html'));
 
 initDb()
   .catch((err) => console.error('Database-initialisatie mislukt:', err))

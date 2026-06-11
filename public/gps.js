@@ -1,19 +1,42 @@
 // Gedeelde GPS-volgfunctie (Leaflet) voor alle pagina's. Verwacht in de
 // pagina: #gps-start, #gps-stop, #follow-label met #follow-me, en #gps-status.
 // `getMap` levert de Leaflet-kaart; `onFix` (optioneel) krijgt elke positie.
+//
+// Op /simulate gedraagt de pagina zich hetzelfde, maar zet een klik op de
+// kaart de "GPS-positie" — om voortgang e.d. te testen zonder te lopen.
+const GPS_SIMULATE = /\/simulate\/?$/.test(location.pathname);
+
 function setupGps(getMap, onFix) {
   let watchId = null;
   let posMarker = null;
   let accuracyCircle = null;
   let firstFix = true;
   let lastPos = null;
+  let simActive = false;
 
   const startBtn = document.getElementById('gps-start');
   const stopBtn = document.getElementById('gps-stop');
   const followLabel = document.getElementById('follow-label');
   const status = document.getElementById('gps-status');
 
+  if (GPS_SIMULATE) startBtn.textContent = 'Start GPS-simulatie';
+
+  function simClick(e) {
+    onPosition({ coords: { latitude: e.latlng.lat, longitude: e.latlng.lng, accuracy: 8 } });
+  }
+
   startBtn.addEventListener('click', () => {
+    if (GPS_SIMULATE) {
+      simActive = true;
+      window.__gpsSimActive = true; // pagina's slaan hun eigen kaartklik-acties over
+      getMap().on('click', simClick);
+      firstFix = true;
+      status.textContent = 'Simulatie: klik op de kaart om je positie te zetten.';
+      startBtn.classList.add('hidden');
+      stopBtn.classList.remove('hidden');
+      if (followLabel) followLabel.classList.remove('hidden');
+      return;
+    }
     if (!navigator.geolocation) {
       status.textContent = 'Let op: GPS wordt niet ondersteund door deze browser.';
       return;
@@ -35,6 +58,12 @@ function setupGps(getMap, onFix) {
   function stop() {
     if (watchId !== null) navigator.geolocation.clearWatch(watchId);
     watchId = null;
+    if (simActive) {
+      const map = getMap();
+      if (map) map.off('click', simClick);
+      simActive = false;
+      window.__gpsSimActive = false;
+    }
     lastPos = null;
     if (posMarker) posMarker.remove();
     if (accuracyCircle) accuracyCircle.remove();
@@ -68,7 +97,9 @@ function setupGps(getMap, onFix) {
     posMarker.setLatLng(latlng);
     accuracyCircle.setLatLng(latlng);
     accuracyCircle.setRadius(position.coords.accuracy);
-    status.textContent = `Nauwkeurigheid: ±${Math.round(position.coords.accuracy)} m`;
+    status.textContent = simActive
+      ? 'Simulatie: klik op de kaart om je positie te verplaatsen.'
+      : `Nauwkeurigheid: ±${Math.round(position.coords.accuracy)} m`;
 
     const follow = document.getElementById('follow-me');
     if (follow && follow.checked) {

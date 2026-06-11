@@ -5,7 +5,7 @@ const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 // Event-slug: uit het URL-pad (a4droute.nl/syncope/…) of, op een eigen
 // domein met subdomeinen, uit de hostnaam (syncope.a4droute.nl).
 const PATH_SEG = decodeURIComponent((location.pathname.split('/')[1] || '').toLowerCase());
-const PAGE_SEGS = new Set(['', 'verkeer', 'admin', 'print', 'api']);
+const PAGE_SEGS = new Set(['', 'verkeer', 'admin', 'print', 'simulate', 'api']);
 const HOST_LABELS = location.hostname.split('.');
 const SLUG_FROM_HOST =
   PAGE_SEGS.has(PATH_SEG) &&

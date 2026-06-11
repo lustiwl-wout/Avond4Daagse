@@ -188,6 +188,8 @@ function nearestVisibleRoute(point) {
 }
 
 function onMapClick(e) {
+  // In de GPS-simulatie (/simulate) zet een klik de positie; geen popups.
+  if (window.__gpsSimActive) return;
   const point = { lat: e.latlng.lat, lng: e.latlng.lng };
   const hit = nearestVisibleRoute(point);
   if (sponsorPlacing) {
