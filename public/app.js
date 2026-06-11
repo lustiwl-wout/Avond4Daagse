@@ -73,6 +73,8 @@ async function loadRoutes() {
       color: DAY_COLORS[row.day],
       weight: 5,
       opacity: 0.85,
+      // Klikken op de lijn gaan naar de kaart (Street View / sponsorplek).
+      interactive: false,
     }).addTo(map);
     const pauseMarker = row.pause
       ? L.marker([row.pause.lat, row.pause.lng], {

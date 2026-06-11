@@ -59,6 +59,8 @@ async function loadData() {
             color: DAY_COLORS[row.day],
             weight: 5,
             opacity: 0.85,
+            // Niet klikbaar: de ruitjes (posten) zijn de klikdoelen.
+            interactive: false,
           }),
           arrows: directionArrows(path, DAY_COLORS[row.day]),
           bounds: boundsOf(path),

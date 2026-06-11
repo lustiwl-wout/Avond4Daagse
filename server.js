@@ -761,7 +761,10 @@ async function withCrossings(eventId, day, mutate) {
     );
     if (rows.length === 0) {
       await client.query('ROLLBACK');
-      return { status: 404, error: 'Geen route voor deze dag.' };
+      return {
+        status: 404,
+        error: 'Deze dag heeft nog geen definitieve route — maak de route eerst definitief.',
+      };
     }
     const crossings = mutate(rows[0].crossings || []);
     if (!crossings) {

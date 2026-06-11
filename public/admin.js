@@ -110,7 +110,9 @@ async function init() {
       crossings: [],
       pause: null,
       pauseMarker: null,
-      routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8 }),
+      // interactive: false — klikken op de lijn moeten de kaart bereiken
+      // (punt toevoegen, pauzepunt en oversteekpunten op de route zetten).
+      routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8, interactive: false }),
       arrows: L.layerGroup(),
     };
   }
