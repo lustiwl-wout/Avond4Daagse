@@ -1215,7 +1215,6 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
   }
 });
 
-// --- Automatisch plannen ---
 // --- Teamroutes berekenen (OSRM, fietsprofiel), tijden en conflicten toetsen ---
 // De verkeersleider wijst teams zelf toe via het puntmenu; na elke
 // toewijzing of wijziging worden de routes en tijden automatisch getoetst:
