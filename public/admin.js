@@ -13,6 +13,7 @@ let map;
 let currentDay = 1;
 let editMode = 'route'; // 'route' | 'rec' | 'vr'
 let pausePlacing = false;
+let overviewMode = false;
 let schedule = null; // per dag {date, time}
 let sponsors = [];
 let sponsorLayers = [];
@@ -94,12 +95,17 @@ async function init() {
       crossings: [],
       pause: null,
       pauseMarker: null,
-      routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8 }).addTo(map),
+      routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8 }),
     };
   }
+  updateDayVisibility();
 
   map.on('click', (e) => {
     if (!loggedIn) return;
+    if (overviewMode) {
+      setSaveStatus('Zet "Toon alle dagen" uit om te kunnen bewerken.');
+      return;
+    }
     map.closePopup();
     const point = { lat: e.latlng.lat, lng: e.latlng.lng };
     if (editMode === 'route') {
@@ -262,7 +268,7 @@ function addMarker(day, point, index) {
     draggable: true,
     zIndexOffset: 600,
   });
-  if (editMode !== 'vr') marker.addTo(map);
+  if (day === currentDay && editMode !== 'vr' && !overviewMode) marker.addTo(map);
   marker.on('dragend', async () => {
     const i = d.markers.indexOf(marker);
     const previous = d.points[i];
@@ -457,7 +463,8 @@ function drawPauseMarker(day) {
     draggable: true,
     zIndexOffset: 800,
     title: `Pauzepunt dag ${day}`,
-  }).addTo(map);
+  });
+  if (day === currentDay && !overviewMode) d.pauseMarker.addTo(map);
   d.pauseMarker.on('dragend', async () => {
     // Pauzepunt blijft altijd op de route: snap naar het dichtstbijzijnde punt.
     const ll = d.pauseMarker.getLatLng();
@@ -608,8 +615,47 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     currentDay = Number(tab.dataset.day);
     updateDayLabels();
     updateInfo();
+    updateDayVisibility();
     refreshVrLayer();
+    // Focus op de gekozen dag.
+    const d = days[currentDay];
+    if (d && d.path && !overviewMode) map.fitBounds(boundsOf(d.path).pad(0.07));
   });
+});
+
+// Focus op één dag: alleen de route, punten en het pauzepunt van de gekozen
+// dag zijn zichtbaar. Het overzicht toont alle routelijnen tegelijk (om
+// overlap te zien), zonder bewerkpunten.
+function updateDayVisibility() {
+  if (!map) return;
+  let overviewBounds = null;
+  for (let day = 1; day <= 4; day++) {
+    const d = days[day];
+    if (!d) continue;
+    const lineVisible = overviewMode || day === currentDay;
+    if (lineVisible) d.routeLine.addTo(map);
+    else d.routeLine.remove();
+    if (overviewMode && d.path) {
+      const b = boundsOf(d.path);
+      overviewBounds = overviewBounds ? overviewBounds.extend(b) : b;
+    }
+    const markersVisible = !overviewMode && day === currentDay && editMode !== 'vr';
+    d.markers.forEach((mk) => (markersVisible ? mk.addTo(map) : mk.remove()));
+    if (d.pauseMarker) {
+      if (!overviewMode && day === currentDay) d.pauseMarker.addTo(map);
+      else d.pauseMarker.remove();
+    }
+  }
+  if (overviewMode && overviewBounds) map.fitBounds(overviewBounds.pad(0.07));
+}
+
+document.getElementById('overview-toggle').addEventListener('change', (e) => {
+  overviewMode = e.target.checked;
+  pausePlacing = false;
+  updatePauseBtn();
+  map.closePopup();
+  updateDayVisibility();
+  refreshVrLayer();
 });
 
 function setEditMode(m) {
@@ -621,12 +667,8 @@ function setEditMode(m) {
   document.getElementById('route-mode').classList.toggle('hidden', m !== 'route');
   document.getElementById('rec-mode').classList.toggle('hidden', m !== 'rec');
   document.getElementById('vr-mode').classList.toggle('hidden', m !== 'vr');
-  // In verkeersmodus geen tussenpunt-markers (wel de routes zelf);
-  // in route- en vastlegmodus zijn alle punten zichtbaar en aanklikbaar.
-  for (let day = 1; day <= 4; day++) {
-    if (!days[day]) continue;
-    days[day].markers.forEach((mk) => (m === 'vr' ? mk.remove() : mk.addTo(map)));
-  }
+  // In verkeersmodus geen tussenpunt-markers (wel de route van de dag zelf).
+  updateDayVisibility();
   refreshVrLayer();
 }
 
@@ -752,6 +794,7 @@ async function loadSavedRoutes() {
   } finally {
     loadingRoutes = false;
     updateDraftStatus();
+    updateDayVisibility();
   }
 }
 
@@ -958,7 +1001,7 @@ async function saveCrossings(day) {
 function refreshVrLayer() {
   vrLayers.forEach((l) => l.remove());
   vrLayers = [];
-  if (editMode !== 'vr') return;
+  if (editMode !== 'vr' || overviewMode) return;
 
   const d = days[currentDay];
   let visibleIndex = 0;

@@ -261,7 +261,7 @@ details > *:not(summary) { margin-top: 0.5rem; }
   margin-right: 0.3rem;
 }
 
-#follow-label { display: block; margin-top: 0.5rem; font-size: 0.85rem; }
+#follow-label, .check-label { display: block; margin-top: 0.5rem; font-size: 0.85rem; }
 
 .point-menu { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.2rem; min-width: 180px; }
 .point-menu strong { font-size: 0.9rem; }
