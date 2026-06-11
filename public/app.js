@@ -108,9 +108,11 @@ function showAnnouncement(text) {
 }
 
 // Regenwaarschuwing: geen weerbericht per dag, maar één duidelijke
-// mededeling wanneer er grote kans op regen is op de eerstvolgende
-// loopdag (Open-Meteo, zonder key; verwachting reikt ~15 dagen vooruit).
-const RAIN_WARN_PCT = 60;
+// mededeling wanneer er grote kans op regen is tijdens het loopvenster
+// van de eerstvolgende loopdag (Open-Meteo, zonder key). We kijken naar
+// de uurlijkse regenkans vanaf de starttijd tot ~3 uur erna — een natte
+// ochtend telt dus niet mee.
+const RAIN_WARN_PCT = 50;
 
 async function loadRainNotice(day) {
   const e = schedule && schedule[day];
@@ -118,23 +120,32 @@ async function loadRainNotice(day) {
   const today = new Date().toISOString().slice(0, 10);
   const max = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
   if (e.date < today || e.date > max) return;
+  const startHour = e.time ? parseInt(e.time.split(':')[0], 10) : 17;
+  const endHour = Math.min(23, startHour + 3);
   try {
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${startFinish.lat}&longitude=${startFinish.lng}` +
-      `&daily=precipitation_probability_max&timezone=Europe%2FAmsterdam` +
+      `&hourly=precipitation_probability&timezone=Europe%2FAmsterdam` +
       `&start_date=${e.date}&end_date=${e.date}`;
     const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.json();
-    const rain = data.daily && data.daily.precipitation_probability_max[0];
-    if (rain == null || rain < RAIN_WARN_PCT) return;
+    const hours = (data.hourly && data.hourly.time) || [];
+    let rain = null;
+    hours.forEach((t, i) => {
+      const hour = Number(t.slice(11, 13));
+      if (hour < startHour || hour > endHour) return;
+      const p = data.hourly.precipitation_probability[i];
+      if (p != null && (rain === null || p > rain)) rain = p;
+    });
+    if (rain === null || rain < RAIN_WARN_PCT) return;
     const datum = new Intl.DateTimeFormat('nl-NL', {
       weekday: 'long',
       day: 'numeric',
       month: 'long',
     }).format(new Date(e.date + 'T12:00:00'));
     const el = document.getElementById('rain-notice');
-    el.textContent = `Grote kans op regen op ${datum} (${rain}%) — denk aan een paraplu of regenkleding.`;
+    el.textContent = `Grote kans op regen tijdens de wandeling op ${datum} (${rain}%) — denk aan een paraplu of regenkleding.`;
     el.classList.remove('hidden');
   } catch {
     // de waarschuwing is een extraatje

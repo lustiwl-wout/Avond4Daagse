@@ -46,7 +46,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **QR-codes** in de admin voor de bezoekers- en verkeerspagina (poster/appgroep).
 - **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
 - **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, de afstand tot de pauze en je verwachte finishtijd; het gelopen deel van de route vervaagt op de kaart.
-- **Regenwaarschuwing**: bij grote kans op regen (≥ 60%, Open-Meteo) op de eerstvolgende loopdag verschijnt automatisch een mededeling over paraplu/regenkleding.
+- **Regenwaarschuwing**: bij grote kans op regen (≥ 50%, Open-Meteo) tijdens het loopvenster (starttijd tot ~3 uur erna) van de eerstvolgende loopdag verschijnt automatisch een mededeling over paraplu/regenkleding.
 
 ## Lokaal draaien
 
