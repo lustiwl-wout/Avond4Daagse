@@ -162,6 +162,7 @@ function initMaps() {
   // Overzichtskaart met alle posten.
   const ov = miniMap('map-overview');
   L.polyline(walkLatLngs, { color: '#1d4ed8', weight: 4 }).addTo(ov);
+  directionArrows(row.path, '#1d4ed8').addTo(ov);
   addFlag(ov);
   if (row.pause) {
     L.marker([row.pause.lat, row.pause.lng], { icon: pauseIcon(), interactive: false }).addTo(ov);
@@ -181,6 +182,7 @@ function initMaps() {
     if (teamPosts.length === 0) continue;
     const tm = miniMap(`map-team-${team.id}`);
     L.polyline(walkLatLngs, { color: '#9ca3af', weight: 3 }).addTo(tm);
+    directionArrows(row.path, '#9ca3af').addTo(tm);
     const tr = teamRoutes[team.id];
     let bounds = boundsOf(row.path);
     if (tr && tr.path) {
@@ -201,6 +203,7 @@ function initMaps() {
     for (const p of teamPosts) {
       const pm = miniMap(`map-post-${team.id}-${p.nr}`);
       L.polyline(walkLatLngs, { color: '#1d4ed8', weight: 4 }).addTo(pm);
+      directionArrows(row.path, '#1d4ed8', 100).addTo(pm);
       L.marker([p.lat, p.lng], { icon: dotIcon(team.color, String(p.nr)), interactive: false }).addTo(pm);
       pm.setView([p.lat, p.lng], 17);
     }

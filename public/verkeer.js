@@ -56,6 +56,7 @@ async function loadData() {
             weight: 5,
             opacity: 0.85,
           }),
+          arrows: directionArrows(path, DAY_COLORS[row.day]),
           bounds: boundsOf(path),
           crossings: (row.crossings || []).filter((c) => !c.hidden),
           pause: row.pause || null,
@@ -104,8 +105,13 @@ function refreshView() {
   vrLayers = [];
   for (let day = 1; day <= 4; day++) {
     if (!walkRoutes[day]) continue;
-    if (day === selectedDay) walkRoutes[day].line.addTo(map);
-    else walkRoutes[day].line.remove();
+    if (day === selectedDay) {
+      walkRoutes[day].line.addTo(map);
+      walkRoutes[day].arrows.addTo(map);
+    } else {
+      walkRoutes[day].line.remove();
+      walkRoutes[day].arrows.remove();
+    }
   }
   const warningEl = document.getElementById('vr-warning');
   warningEl.textContent = '';

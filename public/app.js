@@ -81,6 +81,7 @@ async function loadRoutes() {
       : null;
     routes[row.day] = {
       line,
+      arrows: directionArrows(path, DAY_COLORS[row.day]),
       bounds: boundsOf(path),
       distance_m: row.distance_m,
       path,
@@ -153,11 +154,13 @@ function applySelection() {
     if (!r) continue;
     if (day === selectedDay) {
       r.line.addTo(map);
+      r.arrows.addTo(map);
       if (r.pauseMarker) r.pauseMarker.addTo(map);
       r.sponsorMarkers.forEach((m) => m.addTo(map));
       map.fitBounds(r.bounds.pad(0.07));
     } else {
       r.line.remove();
+      r.arrows.remove();
       if (r.pauseMarker) r.pauseMarker.remove();
       r.sponsorMarkers.forEach((m) => m.remove());
     }

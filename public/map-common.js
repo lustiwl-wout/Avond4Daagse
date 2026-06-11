@@ -130,6 +130,55 @@ function nearestOnPath(path, point) {
   return { dist: best, along: bestAlong, lat: bestPoint.lat, lng: bestPoint.lng };
 }
 
+// Kompasrichting (graden, 0 = noord, met de klok mee) van a naar b.
+function bearingDeg(a, b) {
+  const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+  const dx = (b.lng - a.lng) * Math.cos(lat0);
+  const dy = b.lat - a.lat;
+  return (Math.atan2(dx, dy) * 180) / Math.PI;
+}
+
+// Looprichting: pijlpunten in de routekleur, om de `spacingM` meter langs de
+// route, meedraaiend met de richting. Geeft een layerGroup terug.
+function directionArrows(path, color, spacingM) {
+  const group = L.layerGroup();
+  if (!path || path.length < 2) return group;
+  let total = 0;
+  for (let i = 0; i < path.length - 1; i++) total += distM(path[i], path[i + 1]);
+  const spacing = spacingM || Math.max(150, Math.min(500, total / 12));
+  let next = spacing / 2;
+  let cum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const seg = distM(a, b);
+    if (seg === 0) continue;
+    while (cum + seg >= next) {
+      const t = (next - cum) / seg;
+      const lat = a.lat + (b.lat - a.lat) * t;
+      const lng = a.lng + (b.lng - a.lng) * t;
+      const rotation = Math.round(bearingDeg(a, b));
+      group.addLayer(
+        L.marker([lat, lng], {
+          icon: htmlIcon(
+            `<div class="m-arrow" style="transform: rotate(${rotation}deg)">` +
+              `<svg viewBox="0 0 20 20" width="18" height="18">` +
+              `<path d="M10 2.5 L16.5 14.5 L10 11 L3.5 14.5 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>` +
+              `</svg></div>`,
+            [18, 18],
+            [9, 9]
+          ),
+          interactive: false,
+          zIndexOffset: 300,
+        })
+      );
+      next += spacing;
+    }
+    cum += seg;
+  }
+  return group;
+}
+
 // Pauzepunt: koffiekopje-achtig 'P'-symbool.
 function pauseIcon() {
   return htmlIcon('<div class="m-dot m-pause">P</div>', [26, 26], [13, 13]);

@@ -320,6 +320,9 @@ details > *:not(summary) { margin-top: 0.5rem; }
 
 .m-pause { width: 26px; height: 26px; background: #0e7490; font-size: 13px; }
 
+.m-arrow { width: 18px; height: 18px; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35)); }
+.m-arrow svg { display: block; }
+
 .m-star {
   width: 26px;
   height: 26px;

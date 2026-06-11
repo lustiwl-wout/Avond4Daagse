@@ -96,6 +96,7 @@ async function init() {
       pause: null,
       pauseMarker: null,
       routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8 }),
+      arrows: L.layerGroup(),
     };
   }
   updateDayVisibility();
@@ -350,6 +351,8 @@ async function updateRoute(day) {
   relabelMarkers(day); // nummering altijd kloppend houden, ook na invoegen
   if (d.points.length < 1 || !startFinish) {
     d.routeLine.setLatLngs([]);
+    d.arrows.remove();
+    d.arrows = L.layerGroup();
     d.distanceM = 0;
     d.path = null;
     updateInfo();
@@ -360,6 +363,10 @@ async function updateRoute(day) {
     d.path = r.path;
     d.distanceM = r.distance_m;
     d.routeLine.setLatLngs(r.path.map((p) => [p.lat, p.lng]));
+    // Looprichting-pijlen vernieuwen bij elke herberekening.
+    d.arrows.remove();
+    d.arrows = directionArrows(r.path, DAY_COLORS[day]);
+    updateDayVisibility();
     updateInfo();
     return 'OK';
   } catch (err) {
@@ -388,6 +395,8 @@ function clearDay(day) {
   d.distanceM = 0;
   d.path = null;
   d.routeLine.setLatLngs([]);
+  d.arrows.remove();
+  d.arrows = L.layerGroup();
   updateInfo();
   scheduleDraftSave(day);
 }
@@ -633,8 +642,13 @@ function updateDayVisibility() {
     const d = days[day];
     if (!d) continue;
     const lineVisible = overviewMode || day === currentDay;
-    if (lineVisible) d.routeLine.addTo(map);
-    else d.routeLine.remove();
+    if (lineVisible) {
+      d.routeLine.addTo(map);
+      d.arrows.addTo(map);
+    } else {
+      d.routeLine.remove();
+      d.arrows.remove();
+    }
     if (overviewMode && d.path) {
       const b = boundsOf(d.path);
       overviewBounds = overviewBounds ? overviewBounds.extend(b) : b;
