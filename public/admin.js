@@ -1168,7 +1168,9 @@ function refreshVrLayer() {
         c.hidden ? '' : String(visibleIndex),
         c.hidden
       ),
-      zIndexOffset: 500,
+      // Boven de start/finish-vlag (900): ligt er een oversteekpunt op de
+      // start/finish-plek, dan moet het ruitje bovenop liggen en klikbaar zijn.
+      zIndexOffset: 1000,
       title: c.name,
     }).addTo(map);
     const teamNames = assigned.map((t) => t.name).join(' + ');
