@@ -128,8 +128,19 @@ let pool = null;
 if (process.env.DATABASE_URL) {
   // SSL aan voor gehoste databases (Neon); uit voor lokale verbindingen.
   const local = /localhost|127\.0\.0\.1|host=\/|sslmode=disable/.test(process.env.DATABASE_URL);
+  // De TLS-instellingen staan hieronder expliciet; een sslmode-parameter in
+  // de connectiestring voegt niets toe en laat pg een (onschuldige maar
+  // verwarrende) SECURITY WARNING loggen — dus die halen we eruit.
+  let connectionString = process.env.DATABASE_URL;
+  try {
+    const u = new URL(connectionString);
+    u.searchParams.delete('sslmode');
+    connectionString = u.toString();
+  } catch {
+    // geen standaard-URL (bv. socketpad): laten zoals hij is
+  }
   pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString,
     ssl: local ? false : { rejectUnauthorized: false },
     // Nooit eindeloos op een verbinding wachten (standaard wacht pg voor
     // altijd — daardoor kon een deploy blijven hangen op "Deploying").
