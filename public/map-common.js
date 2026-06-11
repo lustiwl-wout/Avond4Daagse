@@ -235,28 +235,41 @@ async function openStreetView(lat, lng) {
       svOverlay.classList.add('hidden');
     });
   }
-  // Zoek het dichtstbijzijnde panorama (tot 150 m): eerst echte
-  // Street View-buitenbeelden, en als die er niet zijn ook 360°-foto's
-  // van gebruikers (photospheres) — die sluit de outdoor-zoekopdracht
-  // namelijk uit. Op wandel- en fietspaden is dat vaak het enige beeld.
-  let pano;
+  // Zoek het dichtstbijzijnde panorama: eerst echte Street View-
+  // buitenbeelden, daarna alle bronnen inclusief 360°-gebruikersfoto's
+  // (photospheres), en als laatste met een ruimere straal. Elk antwoord
+  // wordt gecontroleerd, want de service geeft soms een leeg resultaat
+  // terug in plaats van een fout.
   const svc = new google.maps.StreetViewService();
-  const lookup = (sources) =>
-    svc.getPanorama({
-      location: { lat, lng },
-      radius: 150,
-      preference: google.maps.StreetViewPreference.NEAREST,
-      sources,
-    });
-  try {
-    pano = (await lookup([google.maps.StreetViewSource.OUTDOOR])).data;
-  } catch {
+  const attempts = [
+    { sources: [google.maps.StreetViewSource.OUTDOOR], radius: 150 },
+    { sources: [google.maps.StreetViewSource.DEFAULT], radius: 150 },
+    { sources: [google.maps.StreetViewSource.DEFAULT], radius: 300 },
+  ];
+  let pano = null;
+  for (const attempt of attempts) {
     try {
-      pano = (await lookup([google.maps.StreetViewSource.DEFAULT])).data;
+      const { data } = await svc.getPanorama({
+        location: { lat, lng },
+        radius: attempt.radius,
+        preference: google.maps.StreetViewPreference.NEAREST,
+        sources: attempt.sources,
+      });
+      if (data && data.location && data.location.pano) {
+        pano = data;
+        break;
+      }
     } catch {
-      alert('Op deze plek (en binnen 150 meter eromheen) is geen Street View of 360°-foto beschikbaar.');
-      return;
+      // volgende poging
     }
+  }
+  if (!pano) {
+    // Achtervang: Google Maps zelf toont ook beelden (zoals photospheres)
+    // die de Street View-service hier niet teruggeeft.
+    if (confirm('De ingebouwde viewer vindt hier geen beeld. Deze plek op Google Maps bekijken?')) {
+      window.open(`https://www.google.com/maps?layer=c&cbll=${lat},${lng}`, '_blank');
+    }
+    return;
   }
 
   // Altijd een vers panorama in een zichtbare overlay, met de camera
