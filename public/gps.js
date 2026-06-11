@@ -2,9 +2,11 @@
 // pagina: #gps-start, #gps-stop, #follow-label met #follow-me, en #gps-status.
 // `getMap` levert de Leaflet-kaart; `onFix` (optioneel) krijgt elke positie.
 //
-// Op /simulate gedraagt de pagina zich hetzelfde, maar zet een klik op de
-// kaart de "GPS-positie" — om voortgang e.d. te testen zonder te lopen.
-const GPS_SIMULATE = /\/simulate\/?$/.test(location.pathname);
+// Op /simulate (of met ?sim=1 achter de gewone URL) gedraagt de pagina
+// zich hetzelfde, maar zet een klik op de kaart de "GPS-positie" — om
+// voortgang e.d. te testen zonder te lopen.
+const GPS_SIMULATE =
+  /\/simulate\/?$/.test(location.pathname) || new URLSearchParams(location.search).has('sim');
 
 function setupGps(getMap, onFix) {
   let watchId = null;

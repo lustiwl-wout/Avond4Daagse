@@ -421,6 +421,15 @@ app.get('/api/address', async (req, res) => {
 
 // --- Events: lijst en aanmaken (vanaf de landingspagina) ---
 
+// Welke versie draait er? Render zet RENDER_GIT_COMMIT bij elke deploy.
+const STARTED_AT = new Date().toISOString();
+app.get('/api/version', (req, res) => {
+  res.json({
+    commit: process.env.RENDER_GIT_COMMIT ? process.env.RENDER_GIT_COMMIT.slice(0, 7) : 'onbekend',
+    startedAt: STARTED_AT,
+  });
+});
+
 app.get('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   try {
