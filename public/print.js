@@ -91,7 +91,7 @@ function render() {
                   .map((t) => `<span class="dot" style="background:${t.color}"></span>${esc(t.name)}`)
                   .join(' + ')
               : '<span class="warn">NOG NIET TOEGEWEZEN</span>';
-          return `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>${fmtMoment(p.headMin)}</td><td>${fmtMoment(p.leaveMin)}</td><td>${team}</td></tr>`;
+          return `<tr><td>${p.nr}</td><td><span data-post-name="${p.nr}">${esc(p.name)}</span></td><td>${fmtMoment(p.headMin)}</td><td>${fmtMoment(p.leaveMin)}</td><td>${team}</td></tr>`;
         })
         .join('')}
     </table>
@@ -110,7 +110,7 @@ function render() {
       ${teamPosts
         .map((p) => {
           return `<div class="post">
-            <h3>Post ${p.nr} — ${esc(p.name)}</h3>
+            <h3>Post ${p.nr} — <span data-post-name="${p.nr}">${esc(p.name)}</span></h3>
             <p class="addr" data-post="${p.nr}">Adres wordt opgezocht…</p>
             <p class="times">Stoet komt aan: ${fmtMoment(p.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(p.leaveMin)}</p>
             <div class="post-media">
@@ -138,7 +138,7 @@ function render() {
     html += `<div class="page">
       <h2 class="warn">Nog niet toegewezen posten</h2>
       <table><tr><th>Post</th><th>Plek</th><th>Stoet komt aan</th></tr>
-      ${unassigned.map((p) => `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>${fmtMoment(p.headMin)}</td></tr>`).join('')}
+      ${unassigned.map((p) => `<tr><td>${p.nr}</td><td><span data-post-name="${p.nr}">${esc(p.name)}</span></td><td>${fmtMoment(p.headMin)}</td></tr>`).join('')}
       </table>
     </div>`;
   }
@@ -213,18 +213,27 @@ function initMaps() {
   }
 }
 
-// Adres per post via de server (Nominatim, met cache en nette throttling).
+// Plek en adres per post live opzoeken (kruising/brug/huisnummer via de
+// server, met cache en nette throttling). De opgeslagen puntnaam is alleen
+// de eerste weergave; de verse opzoeking is leidend.
 async function fillAddresses() {
   for (const p of posts) {
-    const targets = document.querySelectorAll(`[data-post="${p.nr}"]`);
-    if (targets.length === 0) continue;
     try {
-      const res = await fetch(`/api/address?lat=${p.lat}&lng=${p.lng}`);
+      const res = await fetch(`/api/address?lat=${p.lat}&lng=${p.lng}`, {
+        signal: AbortSignal.timeout(20000),
+      });
       if (!res.ok) throw new Error();
       const data = await res.json();
-      targets.forEach((el) => (el.textContent = data.address));
+      document.querySelectorAll(`[data-post="${p.nr}"]`).forEach((el) => (el.textContent = data.address));
+      if (data.road) {
+        document
+          .querySelectorAll(`[data-post-name="${p.nr}"]`)
+          .forEach((el) => (el.textContent = data.road));
+      }
     } catch {
-      targets.forEach((el) => (el.textContent = 'Adres kon niet worden opgezocht'));
+      document
+        .querySelectorAll(`[data-post="${p.nr}"]`)
+        .forEach((el) => (el.textContent = 'Adres kon niet worden opgezocht'));
     }
   }
 }

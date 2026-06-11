@@ -1073,20 +1073,26 @@ async function addManualCrossing(clicked) {
   const data = await crossingRequest(day, 'POST', '', point);
   if (!data || !data.crossing) return;
   setVrStatus('Punt toegevoegd. Wijs er via het ruitje een team aan toe.');
-  try {
-    const res = await fetch(`/api/address?lat=${point.lat}&lng=${point.lng}`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (res.ok) {
+  // Naam (kruising/brug/huisnummer) op de achtergrond bijschrijven. De
+  // adres-wachtrij op de server doet ~1 s per punt, dus bij meerdere snel
+  // geplaatste punten kan dit even duren — ruime timeout en één herkansing.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`/api/address?lat=${point.lat}&lng=${point.lng}`, {
+        signal: AbortSignal.timeout(25000),
+      });
+      if (!res.ok) throw new Error();
       const { road } = await res.json();
       if (road) {
         await crossingRequest(day, 'PUT', `/${encodeURIComponent(data.crossing.id)}`, {
           name: road,
         });
       }
+      return;
+    } catch {
+      // even wachten en nog één keer proberen; naam is niet kritisch
+      await new Promise((r) => setTimeout(r, 3000));
     }
-  } catch {
-    // naam is niet kritisch; het punt staat er al
   }
 }
 

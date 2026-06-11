@@ -507,24 +507,49 @@ function throttledNominatim(url) {
   return call;
 }
 
-// Wegen met naam vlak bij een punt (Overpass/OSM): voor het herkennen van
-// kruisingen ("Kruising A / B") en bruggen. `mainRoad` (van Nominatim)
-// komt vooraan in de volgorde.
-async function nearbyRoads(lat, lng, mainRoad) {
-  const q = `[out:json][timeout:8];way(around:25,${lat},${lng})[highway][name];out tags;`;
-  const resp = await fetch('https://overpass-api.de/api/interpreter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OSM_UA },
-    body: 'data=' + encodeURIComponent(q),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!resp.ok) throw new Error(`Overpass gaf status ${resp.status}`);
-  const data = await resp.json();
+// Omgeving van een punt via Overpass/OSM: wegen met naam (voor kruisingen
+// "Kruising A / B" en bruggen) plus het dichtstbijzijnde huisnummer.
+// `mainRoad` (van Nominatim) komt vooraan in de volgorde.
+async function nearbySpot(lat, lng, mainRoad) {
+  const q =
+    `[out:json][timeout:8];(` +
+    `way(around:25,${lat},${lng})[highway][name];` +
+    `node(around:60,${lat},${lng})["addr:housenumber"];` +
+    `);out center;`;
+  // Twee onafhankelijke Overpass-servers: faalt de eerste, dan de tweede.
+  let data = null;
+  let lastErr = null;
+  for (const base of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+    try {
+      const resp = await fetch(base, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OSM_UA },
+        body: 'data=' + encodeURIComponent(q),
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!resp.ok) throw new Error(`Overpass gaf status ${resp.status}`);
+      data = await resp.json();
+      break;
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  if (!data) throw lastErr;
   const names = [];
   let bridge = null;
+  let nearestAddr = null;
   for (const el of data.elements || []) {
     const t = el.tags || {};
-    if (!t.name) continue;
+    if (t['addr:housenumber'] && Number.isFinite(el.lat) && Number.isFinite(el.lon)) {
+      const dLat = ((el.lat - lat) * Math.PI) / 180;
+      const dLng = (((el.lon - lng) * Math.PI) / 180) * Math.cos((lat * Math.PI) / 180);
+      const dist = Math.hypot(dLat, dLng) * 6371000;
+      if (!nearestAddr || dist < nearestAddr.dist) {
+        nearestAddr = { dist, number: t['addr:housenumber'], street: t['addr:street'] || '' };
+      }
+      continue;
+    }
+    if (!t.highway || !t.name) continue;
     if (t.bridge && t.bridge !== 'no') {
       if (!bridge) bridge = t.name;
       continue; // een brug óver/onder de route is geen kruising
@@ -536,7 +561,7 @@ async function nearbyRoads(lat, lng, mainRoad) {
     names.splice(names.indexOf(mainRoad), 1);
     names.unshift(mainRoad);
   }
-  return { names, bridge };
+  return { names, bridge, nearestAddr };
 }
 
 // Adres bij een punt (publiek, voor de printversie en puntnamen) — gecachet.
@@ -560,9 +585,17 @@ app.get('/api/address', async (req, res) => {
     // Preciezere plek via Overpass; valt bij storing stil terug op Nominatim.
     let spot = '';
     try {
-      const { names, bridge } = await nearbyRoads(lat, lng, mainRoad);
+      const { names, bridge, nearestAddr } = await nearbySpot(lat, lng, mainRoad);
       if (names.length >= 2) spot = `Kruising ${names.slice(0, 2).join(' / ')}`;
       else if (bridge) spot = /brug/i.test(bridge) ? bridge : `${bridge} (brug)`;
+      else if (nearestAddr) {
+        // Dichtstbijzijnd huisnummer; ligt dat aan een andere (zij)straat,
+        // dan die erbij noemen.
+        spot =
+          !nearestAddr.street || nearestAddr.street === mainRoad
+            ? `${mainRoad} t.h.v. nr. ${nearestAddr.number}`
+            : `${mainRoad}, t.h.v. ${nearestAddr.street} ${nearestAddr.number}`;
+      }
     } catch (err) {
       console.error('Overpass-opzoeking mislukt:', err.message);
     }
