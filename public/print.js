@@ -1,16 +1,15 @@
 // Printversie van het verkeersregelaarsplan voor één dag (OpenStreetMap-
 // kaartjes via Leaflet; alleen de Street View-foto's komen van Google):
-// pagina 1 = totaalplan, daarna per team een deel met hun fietsroute en per
+// pagina 1 = totaalplan, daarna per team een deel met hun posten en per
 // post het adres, een kaartje en Street View-foto's vanuit vier windrichtingen.
 const params = new URLSearchParams(location.search);
 const day = Math.min(4, Math.max(1, Number(params.get('day')) || 1));
 
 let svStaticKey = '';
 let eventSchedule = null; // per dag {date, time}
-let vrSettings = { walkKmh: 4, passMin: 8, bikeKmh: 15, marginMin: 2 };
+let vrSettings = { walkKmh: 4, passMin: 8 };
 let startFinish = null;
 let teams = [];
-let teamRoutes = {}; // teamId -> rij voor deze dag
 let row = null;
 let posts = [];
 
@@ -34,11 +33,10 @@ function fmtMoment(min) {
 }
 
 async function init() {
-  const [cfgRes, routesRes, teamsRes, trRes] = await Promise.all([
+  const [cfgRes, routesRes, teamsRes] = await Promise.all([
     fetch('/api/config'),
     fetch('/api/routes'),
     fetch('/api/teams'),
-    fetch('/api/team-routes'),
   ]);
   const config = await cfgRes.json();
   svStaticKey = config.googleMapsApiKey || '';
@@ -46,11 +44,6 @@ async function init() {
   eventSchedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
   if (teamsRes.ok) teams = await teamsRes.json();
-  if (trRes.ok) {
-    for (const r of await trRes.json()) {
-      if (r.day === day) teamRoutes[r.team_id] = r;
-    }
-  }
   const rows = routesRes.ok ? await routesRes.json() : [];
   row = rows.find((r) => r.day === day);
   if (!row || !row.path) {
@@ -76,7 +69,7 @@ function render() {
   let html = `<div class="page">
     <h1>Verkeersregelaarsplan — Dag ${day}</h1>
     <p class="sub">Avond4Daagse Basisschool Syncope · wandeltempo ${vrSettings.walkKmh} km/u ·
-      passeertijd stoet ${vrSettings.passMin} min · tijden in minuten na vertrek bij start/finish</p>
+      passeertijd stoet ${vrSettings.passMin} min</p>
     <div class="pmap pmap-lg" id="map-overview"></div>
     <table>
       <tr><th>Post</th><th>Plek</th><th>Stoet komt aan</th><th>Stoet voorbij (vertrek kan)</th><th>Team</th></tr>
@@ -101,26 +94,18 @@ function render() {
   for (const team of teams) {
     const teamPosts = posts.filter((p) => crossingTeams(p).includes(team.id));
     if (teamPosts.length === 0) continue;
-    const tr = teamRoutes[team.id];
-    const schedule = (tr && tr.timing && tr.timing.schedule) || [];
-    const approved = ((tr && tr.conflicts) || []).filter((c) => c.approved).length;
-    const open = ((tr && tr.conflicts) || []).filter((c) => !c.approved).length;
 
     html += `<div class="page">
       <h2><span class="dot" style="background:${team.color}"></span>${esc(team.name)} — Dag ${day} (per fiets)</h2>
-      <p class="sub">Blauwe lijn = wandelroute · gekleurde stippellijn = jullie fietsroute start → posten → finish.
-        Vertrek bij een post pas als de héle stoet voorbij is.</p>
-      ${open > 0 ? `<p class="warn">Let op: deze route doorkruist de wandelroute op ${open} niet-goedgekeurde plek(ken) — overleg met de organisatie!</p>` : ''}
-      ${approved > 0 ? `<p class="warn">Let op: jullie route steekt de wandelroute ${approved}× over (goedgekeurd). Stap daar af en kijk goed uit.</p>` : ''}
+      <p class="sub">Grijze lijn = wandelroute. Vertrek bij een post pas als de héle stoet voorbij is;
+        navigeren naar een post doe je via Google Maps op de verkeerspagina.</p>
       <div class="pmap pmap-team" id="map-team-${team.id}"></div>
       ${teamPosts
-        .map((p, i) => {
-          const sched = schedule[i] || {};
-          const arrive = sched.arriveMin != null ? ` · jullie aankomst: ${fmtMoment(sched.arriveMin)}` : '';
+        .map((p) => {
           return `<div class="post">
             <h3>Post ${p.nr} — ${esc(p.name)}</h3>
             <p class="addr" data-post="${p.nr}">Adres wordt opgezocht…</p>
-            <p class="times">Stoet komt aan: ${fmtMoment(p.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(p.leaveMin)}${arrive}</p>
+            <p class="times">Stoet komt aan: ${fmtMoment(p.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(p.leaveMin)}</p>
             <div class="post-media">
               <figure>
                 <div class="pmap pmap-sm" id="map-post-${team.id}-${p.nr}"></div>
@@ -197,28 +182,18 @@ function initMaps() {
   }
   ov.fitBounds(boundsOf(row.path).pad(0.05));
 
-  // Per team: wandelroute + fietsroute + eigen posten.
+  // Per team: wandelroute + eigen posten.
   for (const team of teams) {
     const teamPosts = posts.filter((p) => crossingTeams(p).includes(team.id));
     if (teamPosts.length === 0) continue;
     const tm = miniMap(`map-team-${team.id}`);
     L.polyline(walkLatLngs, { color: '#9ca3af', weight: 3 }).addTo(tm);
     directionArrows(row.path, '#9ca3af').addTo(tm);
-    const tr = teamRoutes[team.id];
-    let bounds = boundsOf(row.path);
-    if (tr && tr.path) {
-      L.polyline(tr.path.map((p) => [p.lat, p.lng]), {
-        color: team.color,
-        weight: 3,
-        dashArray: '2 10',
-      }).addTo(tm);
-      bounds = bounds.extend(boundsOf(tr.path));
-    }
     addFlag(tm);
     for (const p of teamPosts) {
       L.marker([p.lat, p.lng], { icon: dotIcon(team.color, String(p.nr)), interactive: false }).addTo(tm);
     }
-    tm.fitBounds(bounds.pad(0.05));
+    tm.fitBounds(boundsOf(row.path).pad(0.05));
 
     // Detailkaartje per post.
     for (const p of teamPosts) {

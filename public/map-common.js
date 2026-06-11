@@ -82,26 +82,9 @@ function diamondIcon(color, label = '', dimmed = false) {
   );
 }
 
-function conflictIcon(approved) {
-  return htmlIcon(
-    `<div class="m-dot" style="background:${approved ? '#ca8a04' : '#dc2626'}">${approved ? '✓' : '!'}</div>`,
-    [24, 24],
-    [12, 12]
-  );
-}
-
 // Blauwe GPS-stip.
 function posIcon() {
   return htmlIcon('<div class="m-pos"></div>', [18, 18], [9, 9]);
-}
-
-function dashedLine(path, color) {
-  return L.polyline(path.map((p) => [p.lat, p.lng]), {
-    color,
-    weight: 3,
-    dashArray: '2 10',
-    opacity: 0.95,
-  });
 }
 
 function boundsOf(path) {

@@ -7,7 +7,7 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 | URL | Voor wie | Wat |
 |---|---|---|
 | `/` | Iedereen | Routes van dag 1 t/m 4 bekijken (elk een eigen kleur), afstanden, GPS aan om jezelf op de kaart te volgen tijdens het lopen, Street View via het gele poppetje. Mobiel-eerst opgezet. |
-| `/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + fietsroute + tijdschema zien, GPS starten. Mobiel-eerst opgezet. |
+| `/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps. Mobiel-eerst opgezet. |
 | `/admin` | Beheer (wachtwoord) | Routes tekenen (ook al lopend vastleggen via GPS), kruisingen, teams en planning beheren |
 | `/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
@@ -36,13 +36,12 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - **Oversteekpunten zet de verkeersleider zelf op de kaart**: klik in de verkeersmodus op de route waar verkeersregelaars moeten staan. Het punt snapt naar de route en krijgt automatisch de straatnaam (Nominatim). De punten verschijnen als genummerde ruitjes, in routevolgorde.
 - Klik op een ruitje om een **team toe te wijzen**, **Street View** te openen of het punt te **verwijderen**.
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
-- **De verkeersleider wijst teams zelf toe**: klik op een ruitje en kies het team. Na elke toewijzing berekent de app automatisch de fietsroutes per team (start → posten → finish, stippellijn) en toetst twee dingen:
-  - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
-  - **Conflictcontrole**: een teamroute mag de wandelroute **nooit doorkruisen** (aanraken bij de eigen posten en start/finish mag). Conflicten krijgen een rood uitroepteken; is er echt geen alternatief, dan kan de admin de uitzondering per punt **goedkeuren** (wordt een gele ✓ — daar geldt: afstappen en uitkijken). Goedkeuringen blijven bewaard bij herberekening.
+- **De verkeersleider wijst teams zelf toe**: klik op een ruitje en kies het team (of twee teams) voor dat punt. De tijden per post — wanneer de stoet aankomt (positie langs de route ÷ wandeltempo) en wanneer de hele stoet voorbij is (+ passeertijd) — staan op `/verkeer` en de printversie, als kloktijd zodra de starttijd van de dag is ingevuld.
+- **Navigeren** naar een post doen de verkeersregelaars via de Google Maps-knop per post op `/verkeer`; onderweg letten ze zelf op de stoet.
 
-**Voor de verkeersregelaars zelf** (`/verkeer`, geen wachtwoord): kies je team → je ziet de oversteekpunten, je eigen fietsroute, een tijdschema per post (wanneer komt de groep, wanneer mag je weg) en eventuele waarschuwingen, en je kunt onderweg de GPS aanzetten.
+**Voor de verkeersregelaars zelf** (`/verkeer`, geen wachtwoord): kies je team → je ziet je posten met tijdschema (wanneer komt de stoet, wanneer mag je weg), je kunt per post met één klik navigeren via Google Maps, en onderweg de GPS aanzetten.
 
-**Printversie** (`/print?day=N`, knop in de admin): pagina 1 is het totaalplan (overzichtskaart + tabel met alle posten, tijden en teams), daarna per team een eigen deel met hun fietsroutekaart en per post het adres, een detailkaartje en Street View-foto's vanuit vier windrichtingen. Hiervoor moeten naast de eerdere API's ook de **Maps Static API** en de **Street View Static API** ingeschakeld zijn (en in de API-restricties van de key staan).
+**Printversie** (`/print?day=N`, knop in de admin): pagina 1 is het totaalplan (overzichtskaart + tabel met alle posten, tijden en teams), daarna per team een eigen deel met overzichtskaart en per post het adres, een detailkaartje en Street View-foto's vanuit vier windrichtingen. Hiervoor moeten naast de eerdere API's ook de **Maps Static API** en de **Street View Static API** ingeschakeld zijn (en in de API-restricties van de key staan).
 
 ## Lokaal draaien
 
@@ -56,7 +55,7 @@ npm start              # http://localhost:3000
 ## Kaarten en routes: OpenStreetMap — Google alleen voor Street View
 
 - **Kaartweergave**: Leaflet met OpenStreetMap-tegels (gratis, geen key).
-- **Routes**: OSRM via de routers van openstreetmap.org — voetprofiel voor de wandelroute, fietsprofiel voor de teamroutes.
+- **Routes**: OSRM via de routers van openstreetmap.org (voetprofiel) voor de wandelroute.
 - **Adressen en straatnamen**: Nominatim (server-side, met cache en nette throttling).
 - **Street View**: het enige Google-onderdeel. Overlay-panorama op de kaartpagina's en foto's vanuit vier windrichtingen op de printversie.
 

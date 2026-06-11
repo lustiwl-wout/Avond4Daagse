@@ -2,7 +2,6 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { findConflicts, overlapLength } = require('./geometry');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -66,18 +65,6 @@ async function initDb() {
       mode TEXT NOT NULL DEFAULT 'BICYCLING'
     )
   `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS team_routes (
-      team_id INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
-      path JSONB,
-      distance_m INTEGER,
-      conflicts JSONB,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (team_id, day)
-    )
-  `);
-  await pool.query('ALTER TABLE team_routes ADD COLUMN IF NOT EXISTS timing JSONB');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS route_drafts (
       id SERIAL PRIMARY KEY,
@@ -340,9 +327,8 @@ app.delete('/api/admin/sponsors/:id', async (req, res) => {
 app.put('/api/admin/vr-settings', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
-  const { walkKmh, passMin, bikeKmh, marginMin } = req.body || {};
-  const values = [walkKmh, passMin, bikeKmh, marginMin];
-  if (!values.every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
+  const { walkKmh, passMin } = req.body || {};
+  if (![walkKmh, passMin].every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
     return res.status(400).json({ error: 'Ongeldige planningsinstellingen.' });
   }
   try {
@@ -350,7 +336,7 @@ app.put('/api/admin/vr-settings', async (req, res) => {
       `INSERT INTO settings (key, value, updated_at)
        VALUES ('vr_settings', $1, now())
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify({ walkKmh, passMin, bikeKmh, marginMin })]
+      [JSON.stringify({ walkKmh, passMin })]
     );
     res.status(204).end();
   } catch (err) {
@@ -566,26 +552,6 @@ app.post('/api/admin/move-route', async (req, res) => {
       );
     }
 
-    // Teamroutes omwisselen (primary key op team+dag, dus ook delete + insert).
-    const { rows: trRows } = await client.query(
-      'SELECT * FROM team_routes WHERE day IN ($1, $2) FOR UPDATE',
-      [from, to]
-    );
-    await client.query('DELETE FROM team_routes WHERE day IN ($1, $2)', [from, to]);
-    for (const r of trRows) {
-      await client.query(
-        `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, timing, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now())`,
-        [
-          r.team_id,
-          r.day === from ? to : from,
-          r.path ? JSON.stringify(r.path) : null,
-          r.distance_m,
-          r.conflicts ? JSON.stringify(r.conflicts) : null,
-          r.timing ? JSON.stringify(r.timing) : null,
-        ]
-      );
-    }
 
     // Concepten en sponsoracties hebben geen unieke dag-sleutel: direct omwisselen.
     await client.query(
@@ -630,95 +596,10 @@ app.delete('/api/routes/:day', async (req, res) => {
 const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (schoolproject basisschool Almere)';
 const OSRM_PROFILES = {
   foot: 'https://routing.openstreetmap.de/routed-foot',
-  bike: 'https://routing.openstreetmap.de/routed-bike',
 };
 
 // Route berekenen via OSRM (de router van openstreetmap.org): kent alle
 // voet- en fietspaden. De wandelroute gebruikt 'foot', teamroutes 'bike'.
-// Afslaginstructie van een OSRM-stap in het Nederlands.
-function stepText(step) {
-  const type = step.maneuver.type;
-  const name = step.name ? ` — ${step.name}` : '';
-  if (type === 'arrive') return 'je bent bij je post';
-  if (type === 'roundabout' || type === 'rotary') {
-    const exit = step.maneuver.exit ? `de ${step.maneuver.exit}e afslag` : 'de rotonde volgen';
-    return `op de rotonde ${exit}${name}`;
-  }
-  const dirs = {
-    left: 'linksaf',
-    right: 'rechtsaf',
-    'slight left': 'flauw links aanhouden',
-    'slight right': 'flauw rechts aanhouden',
-    'sharp left': 'scherp linksaf',
-    'sharp right': 'scherp rechtsaf',
-    straight: 'rechtdoor',
-    uturn: 'omkeren',
-  };
-  return `${dirs[step.maneuver.modifier] || 'rechtdoor'}${name}`;
-}
-
-// Navigatie voor verkeersregelaars (publiek, /verkeer heeft geen wachtwoord):
-// fietsroute van de huidige positie naar een post, om de stoet heen. OSRM
-// levert alternatieven; gekozen wordt de eerste route die de wandelroute
-// nergens dwars kruist én er niet overheen rijdt — ook als die langer duurt.
-// Lukt dat niet, dan de minst slechte mét de conflictplekken erbij.
-app.post('/api/navigate', async (req, res) => {
-  if (!requireDb(res)) return;
-  const { day, from, to } = req.body || {};
-  const dayNum = Number(day);
-  if (![1, 2, 3, 4].includes(dayNum) || !isValidLatLng(from || {}) || !isValidLatLng(to || {})) {
-    return res.status(400).json({ error: 'Ongeldige navigatie-aanvraag.' });
-  }
-  try {
-    const { rows } = await pool.query('SELECT path FROM day_routes WHERE day = $1', [dayNum]);
-    if (rows.length === 0 || !rows[0].path) {
-      return res.status(404).json({ error: 'Geen wandelroute voor deze dag.' });
-    }
-    const walkPath = rows[0].path;
-    const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
-    const url = `${OSRM_PROFILES.bike}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=3&steps=true`;
-    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-      return res.status(422).json({ error: 'Geen fietsroute gevonden.' });
-    }
-    const evaluated = data.routes.map((r) => {
-      const path = r.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
-      // Bij vertrek- en aankomstpunt mag de route de stoet raken (de post
-      // ligt immers óp de wandelroute).
-      const conflicts = findConflicts(path, walkPath, [from, to], { excludeDist: 60 });
-      const overlapM = Math.round(overlapLength(path, walkPath, 15));
-      const steps = ((r.legs && r.legs[0] && r.legs[0].steps) || [])
-        .filter((s) => s.maneuver.type !== 'depart')
-        .map((s) => ({
-          lat: s.maneuver.location[1],
-          lng: s.maneuver.location[0],
-          text: stepText(s),
-        }));
-      return {
-        path,
-        steps,
-        distance_m: Math.round(r.distance),
-        duration_s: Math.round(r.duration),
-        conflicts,
-        overlap_m: overlapM,
-        clean: conflicts.length === 0 && overlapM < 80,
-      };
-    });
-    evaluated.sort(
-      (a, b) =>
-        Number(b.clean) - Number(a.clean) ||
-        a.conflicts.length - b.conflicts.length ||
-        a.overlap_m - b.overlap_m ||
-        a.duration_s - b.duration_s
-    );
-    res.json(evaluated[0]);
-  } catch (err) {
-    console.error('Navigatie mislukt:', err);
-    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar.' });
-  }
-});
-
 app.post('/api/admin/route', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const { profile, points } = req.body || {};
@@ -927,81 +808,6 @@ app.delete('/api/admin/teams/:id', async (req, res) => {
   }
 });
 
-// Publiek: alle teamroutes (voor de verkeersregelaarsweergave).
-app.get('/api/team-routes', async (req, res) => {
-  if (!requireDb(res)) return;
-  try {
-    const { rows } = await pool.query(
-      'SELECT team_id, day, path, distance_m, conflicts, timing, updated_at FROM team_routes'
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Teamroutes ophalen mislukt.' });
-  }
-});
-
-// Admin: controleer of een teamroute de wandelroute van die dag doorkruist.
-app.post('/api/admin/conflicts/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { path: teamPath, exclude } = req.body;
-  if (!Array.isArray(teamPath) || teamPath.length < 2 || !teamPath.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Ongeldig teamroutepad.' });
-  }
-  try {
-    const { rows } = await pool.query('SELECT path FROM day_routes WHERE day = $1', [day]);
-    if (rows.length === 0 || !rows[0].path) {
-      return res.status(404).json({ error: 'Geen wandelroute voor deze dag.' });
-    }
-    const excludePoints = Array.isArray(exclude) ? exclude.filter(isValidLatLng) : [];
-    const conflicts = findConflicts(teamPath, rows[0].path, excludePoints);
-    res.json({ conflicts });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Conflictcontrole mislukt.' });
-  }
-});
-
-// Admin: teamroute voor een dag opslaan (path null wist de route).
-app.put('/api/admin/team-route/:teamId/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const teamId = Number(req.params.teamId);
-  const { path: teamPath, distance_m, conflicts, timing } = req.body;
-  try {
-    if (!teamPath) {
-      await pool.query('DELETE FROM team_routes WHERE team_id = $1 AND day = $2', [teamId, day]);
-      return res.status(204).end();
-    }
-    if (!Array.isArray(teamPath) || !teamPath.every(isValidLatLng)) {
-      return res.status(400).json({ error: 'Ongeldig teamroutepad.' });
-    }
-    await pool.query(
-      `INSERT INTO team_routes (team_id, day, path, distance_m, conflicts, timing, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, now())
-       ON CONFLICT (team_id, day) DO UPDATE
-         SET path = EXCLUDED.path, distance_m = EXCLUDED.distance_m,
-             conflicts = EXCLUDED.conflicts, timing = EXCLUDED.timing, updated_at = now()`,
-      [
-        teamId,
-        day,
-        JSON.stringify(teamPath),
-        distance_m || null,
-        JSON.stringify(conflicts || []),
-        timing ? JSON.stringify(timing) : null,
-      ]
-    );
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Teamroute opslaan mislukt.' });
-  }
-});
 
 initDb()
   .catch((err) => console.error('Database-initialisatie mislukt:', err))

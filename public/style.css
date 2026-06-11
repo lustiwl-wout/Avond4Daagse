@@ -244,27 +244,20 @@ details > *:not(summary) { margin-top: 0.5rem; }
 
 .warning { color: var(--danger); font-weight: 600; }
 
-#nav-instruction {
-  background: var(--card);
-  border: 2px solid var(--brand);
-  border-radius: var(--radius);
-  padding: 0.55rem 0.75rem;
-  font-size: 1rem;
-  font-weight: 700;
-}
-
-#nav-google {
-  display: block;
-  text-align: center;
+.nav-link {
+  display: inline-block;
+  margin-top: 0.35rem;
   background: var(--brand);
   color: var(--brand-contrast);
   border-radius: var(--radius-pill);
-  padding: 0.55rem 0.9rem;
-  font-size: 0.9rem;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.8rem;
   font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
 }
-#nav-google:hover { background: var(--brand-dark); }
+.nav-link:hover { background: var(--brand-dark); }
+
 
 .setting-row {
   display: flex;
