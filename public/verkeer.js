@@ -147,15 +147,15 @@ function refreshView() {
   let index = 0;
   for (const c of sortedCrossings) {
     index++;
-    const team = c.team != null ? teamById(c.team) : null;
-    const isMine = teamFilter === null || c.team === teamFilter;
+    const assigned = crossingTeams(c).map(teamById).filter(Boolean);
+    const isMine = teamFilter === null || crossingTeams(c).includes(teamFilter);
     const marker = L.marker([c.lat, c.lng], {
-      icon: diamondIcon(team ? team.color : '#f59e0b', index, !isMine),
+      icon: diamondIcon(crossingColor(assigned), index, !isMine),
       zIndexOffset: 500,
       title: c.name,
     }).addTo(map);
     const nr = index;
-    marker.on('click', () => openCrossingInfo(c, team, nr));
+    marker.on('click', () => openCrossingInfo(c, assigned, nr));
     vrLayers.push(marker);
   }
 
@@ -192,14 +192,17 @@ function refreshView() {
   renderSchedule(teamFilter);
 }
 
-function openCrossingInfo(c, team, nr) {
+function openCrossingInfo(c, assigned, nr) {
   const div = document.createElement('div');
   div.className = 'point-menu';
   const title = document.createElement('strong');
   title.textContent = `Post ${nr}: ${c.name}`;
   div.appendChild(title);
   const teamLine = document.createElement('span');
-  teamLine.textContent = team ? `Team: ${team.name}` : 'Nog geen team toegewezen';
+  teamLine.textContent =
+    assigned.length > 0
+      ? `Team${assigned.length > 1 ? 's' : ''}: ${assigned.map((t) => t.name).join(' + ')}`
+      : 'Nog geen team toegewezen';
   div.appendChild(teamLine);
   div.appendChild(
     menuButton('Bekijk in Street View', () => {

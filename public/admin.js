@@ -1118,20 +1118,21 @@ function refreshVrLayer() {
   let visibleIndex = 0;
   for (const c of sorted) {
     if (!c.hidden) visibleIndex++;
-    const team = c.team != null ? teamById(c.team) : null;
+    const assigned = crossingTeams(c).map(teamById).filter(Boolean);
     const marker = L.marker([c.lat, c.lng], {
       icon: diamondIcon(
-        c.hidden ? '#9ca3af' : team ? team.color : '#f59e0b',
+        c.hidden ? '#9ca3af' : crossingColor(assigned),
         c.hidden ? '' : String(visibleIndex),
         c.hidden
       ),
       zIndexOffset: 500,
       title: c.name,
     }).addTo(map);
+    const teamNames = assigned.map((t) => t.name).join(' + ');
     const item = {
       lat: c.lat,
       lng: c.lng,
-      label: `Oversteekpunt ${c.hidden ? '(verborgen)' : visibleIndex}: ${c.name}${team ? ` — ${team.name}` : ''}`,
+      label: `Oversteekpunt ${c.hidden ? '(verborgen)' : visibleIndex}: ${c.name}${teamNames ? ` — ${teamNames}` : ''}`,
       open: () => openCrossingMenu(c, marker),
     };
     vrClickItems.push(item);
@@ -1151,27 +1152,39 @@ function openCrossingMenu(c, marker) {
   title.textContent = `Oversteek: ${c.name}`;
   div.appendChild(title);
 
-  const teamSelect = document.createElement('select');
-  const noneOpt = document.createElement('option');
-  noneOpt.value = '';
-  noneOpt.textContent = '— geen team —';
-  teamSelect.appendChild(noneOpt);
-  for (const t of teams) {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = t.name;
-    teamSelect.appendChild(opt);
-  }
-  teamSelect.value = c.team != null ? String(c.team) : '';
-  teamSelect.addEventListener('change', async () => {
-    c.team = teamSelect.value ? Number(teamSelect.value) : null;
+  // Maximaal twee teams per punt (voor grote kruisingen).
+  const assigned = crossingTeams(c);
+  const makeTeamSelect = (placeholder, value) => {
+    const select = document.createElement('select');
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = placeholder;
+    select.appendChild(noneOpt);
+    for (const t of teams) {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.name;
+      select.appendChild(opt);
+    }
+    select.value = value != null ? String(value) : '';
+    return select;
+  };
+  const sel1 = makeTeamSelect('— geen team —', assigned[0]);
+  const sel2 = makeTeamSelect('— geen tweede team —', assigned[1]);
+  const onTeamsChanged = async () => {
+    const ids = [sel1.value, sel2.value].filter(Boolean).map(Number);
+    c.teams = [...new Set(ids)];
+    c.team = c.teams[0] ?? null; // oudere lezers blijven werken
     await saveCrossings(currentDay);
     map.closePopup();
     refreshVrLayer();
     // Handmatige toewijzing: routes direct opnieuw berekenen en toetsen.
     await computeTeamRoutesForDay(currentDay);
-  });
-  div.appendChild(teamSelect);
+  };
+  sel1.addEventListener('change', onTeamsChanged);
+  sel2.addEventListener('change', onTeamsChanged);
+  div.appendChild(sel1);
+  div.appendChild(sel2);
 
   div.appendChild(
     menuButton('Bekijk in Street View', () => {
@@ -1218,7 +1231,8 @@ function renderTeams() {
       teams = teams.filter((x) => x.id !== t.id);
       for (let day = 1; day <= 4; day++) {
         days[day].crossings.forEach((c) => {
-          if (c.team === t.id) c.team = null;
+          c.teams = crossingTeams(c).filter((id) => id !== t.id);
+          c.team = c.teams[0] ?? null;
         });
         delete teamRoutes[`${t.id}_${day}`];
       }
@@ -1266,7 +1280,7 @@ async function computeTeamRoutesForDay(day) {
   const problems = [];
   for (const team of teams) {
     const points = d.crossings
-      .filter((c) => !c.hidden && c.team === team.id)
+      .filter((c) => !c.hidden && crossingTeams(c).includes(team.id))
       .map((c) => ({ c, along: alongPath(d.path, c) }))
       .sort((a, b) => a.along - b.along);
     const key = `${team.id}_${day}`;

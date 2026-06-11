@@ -68,10 +68,15 @@ function render() {
       <tr><th>Post</th><th>Plek</th><th>Groep er</th><th>Weg mogen</th><th>Team</th></tr>
       ${posts
         .map((p) => {
-          const t = teams.find((x) => x.id === p.team);
-          const team = t
-            ? `<span class="dot" style="background:${t.color}"></span>${esc(t.name)}`
-            : '<span class="warn">NOG NIET TOEGEWEZEN</span>';
+          const assigned = crossingTeams(p)
+            .map((id) => teams.find((x) => x.id === id))
+            .filter(Boolean);
+          const team =
+            assigned.length > 0
+              ? assigned
+                  .map((t) => `<span class="dot" style="background:${t.color}"></span>${esc(t.name)}`)
+                  .join(' + ')
+              : '<span class="warn">NOG NIET TOEGEWEZEN</span>';
           return `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>+${p.headMin} min</td><td>+${p.leaveMin} min</td><td>${team}</td></tr>`;
         })
         .join('')}
@@ -80,7 +85,7 @@ function render() {
   </div>`;
 
   for (const team of teams) {
-    const teamPosts = posts.filter((p) => p.team === team.id);
+    const teamPosts = posts.filter((p) => crossingTeams(p).includes(team.id));
     if (teamPosts.length === 0) continue;
     const tr = teamRoutes[team.id];
     const schedule = (tr && tr.timing && tr.timing.schedule) || [];
@@ -122,7 +127,7 @@ function render() {
     </div>`;
   }
 
-  const unassigned = posts.filter((p) => p.team == null);
+  const unassigned = posts.filter((p) => crossingTeams(p).length === 0);
   if (unassigned.length > 0) {
     html += `<div class="page">
       <h2 class="warn">Nog niet toegewezen posten</h2>
@@ -168,9 +173,11 @@ function initMaps() {
     L.marker([row.pause.lat, row.pause.lng], { icon: pauseIcon(), interactive: false }).addTo(ov);
   }
   for (const p of posts) {
-    const t = teams.find((x) => x.id === p.team);
+    const assigned = crossingTeams(p)
+      .map((id) => teams.find((x) => x.id === id))
+      .filter(Boolean);
     L.marker([p.lat, p.lng], {
-      icon: dotIcon(t ? t.color : '#f59e0b', p.nr <= 99 ? String(p.nr) : ''),
+      icon: dotIcon(crossingColor(assigned), p.nr <= 99 ? String(p.nr) : ''),
       interactive: false,
     }).addTo(ov);
   }
@@ -178,7 +185,7 @@ function initMaps() {
 
   // Per team: wandelroute + fietsroute + eigen posten.
   for (const team of teams) {
-    const teamPosts = posts.filter((p) => p.team === team.id);
+    const teamPosts = posts.filter((p) => crossingTeams(p).includes(team.id));
     if (teamPosts.length === 0) continue;
     const tm = miniMap(`map-team-${team.id}`);
     L.polyline(walkLatLngs, { color: '#9ca3af', weight: 3 }).addTo(tm);

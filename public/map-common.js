@@ -59,6 +59,20 @@ function vertexIcon(color) {
   return htmlIcon(`<div class="m-vertex" style="border-color:${color}"></div>`, [16, 16], [8, 8]);
 }
 
+// Teams van een oversteekpunt: ondersteunt 1 of 2 teams; oudere data had
+// een enkel 'team'-veld.
+function crossingTeams(c) {
+  if (Array.isArray(c.teams)) return c.teams.filter((t) => t != null);
+  return c.team != null ? [c.team] : [];
+}
+
+// Achtergrond voor een ruitje: één teamkleur, of diagonaal gesplitst bij twee.
+function crossingColor(teamObjs, fallback = '#f59e0b') {
+  if (teamObjs.length === 0) return fallback;
+  if (teamObjs.length === 1) return teamObjs[0].color;
+  return `linear-gradient(135deg, ${teamObjs[0].color} 50%, ${teamObjs[1].color} 50%)`;
+}
+
 // Genummerd ruitje (oversteekpunten).
 function diamondIcon(color, label = '', dimmed = false) {
   return htmlIcon(

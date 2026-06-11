@@ -821,10 +821,16 @@ app.delete('/api/admin/teams/:id', async (req, res) => {
   try {
     const { rowCount } = await pool.query('DELETE FROM teams WHERE id = $1', [teamId]);
     if (rowCount === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
-    // Toewijzingen aan dit team weghalen uit alle kruisingen.
+    // Toewijzingen aan dit team weghalen uit alle kruisingen (een punt kan
+    // aan één of twee teams zijn toegewezen).
     const { rows } = await pool.query('SELECT day, crossings FROM day_routes WHERE crossings IS NOT NULL');
     for (const row of rows) {
-      const cleaned = row.crossings.map((c) => (c.team === teamId ? { ...c, team: null } : c));
+      const cleaned = row.crossings.map((c) => {
+        const list = (Array.isArray(c.teams) ? c.teams : c.team != null ? [c.team] : []).filter(
+          (id) => id !== teamId
+        );
+        return { ...c, teams: list, team: list[0] ?? null };
+      });
       await pool.query('UPDATE day_routes SET crossings = $1 WHERE day = $2', [
         JSON.stringify(cleaned),
         row.day,
