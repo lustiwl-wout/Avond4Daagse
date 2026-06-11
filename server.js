@@ -97,10 +97,11 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  await migrateToEvents();
+  // Pas ná de migratie: oudere installaties hebben de event_id-kolom dan pas.
   await pool.query(
     'CREATE INDEX IF NOT EXISTS route_drafts_event_day_idx ON route_drafts (event_id, day, id DESC)'
   );
-  await migrateToEvents();
 }
 
 // Migratie van een oudere één-organisatie-installatie: bestaande data
@@ -114,8 +115,16 @@ async function migrateToEvents() {
   const { rows: existingEvents } = await pool.query('SELECT id FROM events ORDER BY id LIMIT 1');
   let defaultEventId = existingEvents.length > 0 ? existingEvents[0].id : null;
 
-  const { rows: orphan } = await pool.query('SELECT 1 FROM day_routes WHERE event_id IS NULL LIMIT 1');
-  if (defaultEventId === null && orphan.length > 0) {
+  // Data zonder event in welke tabel dan ook = oude één-organisatie-installatie.
+  let hasOrphans = false;
+  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+    const { rows } = await pool.query(`SELECT 1 FROM ${table} WHERE event_id IS NULL LIMIT 1`);
+    if (rows.length > 0) {
+      hasOrphans = true;
+      break;
+    }
+  }
+  if (defaultEventId === null && hasOrphans) {
     const hash = sha256(process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex'));
     const { rows } = await pool.query(
       `INSERT INTO events (slug, name, password_hash)
