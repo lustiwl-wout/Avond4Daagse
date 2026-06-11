@@ -85,7 +85,47 @@ function updateDraftStatus() {
       : 'Definitieve versie — geen openstaande wijzigingen';
   document.getElementById('draft-status').textContent = text;
   document.getElementById('draft-status-rec').textContent = text;
+  updateLockUI();
 }
+
+// --- Definitief = vergrendeld ---
+// Een dag met een gepubliceerde route en zonder concepten is definitief:
+// route, pauzepunt en tussenpunten zijn dan niet te bewerken totdat de dag
+// is teruggezet naar concept. De verkeersmodus (oversteekpunten en teams)
+// blijft gewoon werken — die hoort juist bij de definitieve route.
+function dayLocked(day = currentDay) {
+  const d = days[day];
+  return !!(d && d.published && draftCounts[day] === 0);
+}
+
+function lockedMessage() {
+  setSaveStatus(
+    `Dag ${currentDay} is definitief — zet hem eerst terug naar concept (knop bovenaan de zijbalk).`
+  );
+}
+
+function updateLockUI() {
+  const locked = dayLocked();
+  for (const id of ['draw-section', 'pause-section', 'publish-section', 'move-section']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', locked);
+  }
+  const box = document.getElementById('locked-section');
+  if (box) box.classList.toggle('hidden', !locked);
+  const btn = document.getElementById('unlock-btn');
+  if (btn) btn.textContent = `Zet dag ${currentDay} terug naar concept`;
+  updateDayVisibility();
+}
+
+document.getElementById('unlock-btn').addEventListener('click', async () => {
+  if (!dayLocked()) return;
+  // Eerste concept = kopie van de definitieve versie; daarmee is de dag
+  // weer bewerkbaar. Bezoekers blijven de definitieve route zien.
+  await saveDraft(currentDay);
+  setSaveStatus(
+    `Dag ${currentDay} staat weer in concept. Maak de dag opnieuw definitief als je klaar bent met bewerken.`
+  );
+});
 
 // --- Kaart ---
 async function init() {
@@ -110,6 +150,7 @@ async function init() {
       crossings: [],
       pause: null,
       pauseMarker: null,
+      published: false,
       // interactive: false — klikken op de lijn moeten de kaart bereiken
       // (punt toevoegen, pauzepunt en oversteekpunten op de route zetten).
       routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8, interactive: false }),
@@ -127,6 +168,7 @@ async function init() {
     map.closePopup();
     const point = { lat: e.latlng.lat, lng: e.latlng.lng };
     if (editMode === 'route') {
+      if (dayLocked()) return lockedMessage();
       if (pausePlacing) placePause(currentDay, point);
       else addPoint(currentDay, point);
     } else if (editMode === 'vr') {
@@ -491,6 +533,7 @@ function updateMapCursor() {
 }
 
 document.getElementById('pause-btn').addEventListener('click', () => {
+  if (dayLocked()) return lockedMessage();
   if (!days[currentDay].path) {
     setSaveStatus('Let op: teken eerst de route van deze dag.');
     return;
@@ -542,6 +585,11 @@ function drawPauseMarker(day) {
   });
   if (day === currentDay && !overviewMode) d.pauseMarker.addTo(map);
   d.pauseMarker.on('dragend', async () => {
+    if (dayLocked(day)) {
+      d.pauseMarker.setLatLng([d.pause.lat, d.pause.lng]);
+      lockedMessage();
+      return;
+    }
     // Pauzepunt blijft altijd op de route: snap naar het dichtstbijzijnde punt.
     const ll = d.pauseMarker.getLatLng();
     const nearest = nearestOnPath(d.path || [d.pause], { lat: ll.lat, lng: ll.lng });
@@ -564,6 +612,7 @@ function drawPauseMarker(day) {
     div.appendChild(
       menuButton('Verwijder pauzepunt', async () => {
         map.closePopup();
+        if (dayLocked(day)) return lockedMessage();
         d.pause = null;
         await savePause(day);
         drawPauseMarker(day);
@@ -721,7 +770,8 @@ function updateDayVisibility() {
       const b = boundsOf(d.path);
       overviewBounds = overviewBounds ? overviewBounds.extend(b) : b;
     }
-    const markersVisible = !overviewMode && day === currentDay && editMode !== 'vr';
+    const markersVisible =
+      !overviewMode && day === currentDay && editMode !== 'vr' && !dayLocked(day);
     d.markers.forEach((mk) => (markersVisible ? mk.addTo(map) : mk.remove()));
     if (d.pauseMarker) {
       if (!overviewMode && day === currentDay) d.pauseMarker.addTo(map);
@@ -763,6 +813,7 @@ document.getElementById('mode-vr').addEventListener('click', () => setEditMode('
 const gps = setupGps(() => map);
 
 document.getElementById('rec-add').addEventListener('click', () => {
+  if (dayLocked()) return lockedMessage();
   const pos = gps.getPosition();
   if (!pos) {
     setSaveStatus('Let op: start eerst de GPS en wacht op een locatie.');
@@ -772,6 +823,7 @@ document.getElementById('rec-add').addEventListener('click', () => {
 });
 
 document.getElementById('rec-undo').addEventListener('click', () => {
+  if (dayLocked()) return lockedMessage();
   const d = days[currentDay];
   if (d.points.length === 0) return;
   removePoint(currentDay, d.points.length - 1);
@@ -780,12 +832,16 @@ document.getElementById('rec-undo').addEventListener('click', () => {
 document.getElementById('rec-save').addEventListener('click', () => saveCurrentDay());
 
 document.getElementById('undo-btn').addEventListener('click', () => {
+  if (dayLocked()) return lockedMessage();
   const d = days[currentDay];
   if (d.points.length === 0) return;
   removePoint(currentDay, d.points.length - 1);
 });
 
-document.getElementById('clear-btn').addEventListener('click', () => clearDay(currentDay));
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (dayLocked()) return lockedMessage();
+  clearDay(currentDay);
+});
 
 let statusTimer = null;
 function setSaveStatus(text, sticky = false) {
@@ -805,6 +861,7 @@ function setVrStatus(text) {
 // --- Publiceren en verwijderen ---
 async function saveCurrentDay() {
   const d = days[currentDay];
+  if (dayLocked()) return lockedMessage();
   if (d.points.length < 1) return setSaveStatus('Zet eerst minimaal 1 tussenpunt op de kaart.');
   clearTimeout(draftTimers[currentDay]);
   const res = await fetch(api(`/routes/${currentDay}`), {
@@ -814,8 +871,11 @@ async function saveCurrentDay() {
   });
   if (res.ok) {
     draftCounts[currentDay] = 0;
+    d.published = true;
     updateDraftStatus();
-    setSaveStatus(`Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
+    setSaveStatus(
+      `Route dag ${currentDay} is nu definitief en vergrendeld — bewerken kan weer na "terug naar concept".`
+    );
   } else {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('Let op: ' + (err.error || 'publiceren mislukt.'));
@@ -839,6 +899,7 @@ function updateMoveTargets() {
 }
 
 document.getElementById('move-btn').addEventListener('click', async () => {
+  if (dayLocked()) return lockedMessage();
   const target = Number(document.getElementById('move-target').value);
   const d = days[currentDay];
   if (!target || target === currentDay) return;
@@ -870,6 +931,7 @@ document.getElementById('print-btn').addEventListener('click', () => {
 });
 
 document.getElementById('delete-btn').addEventListener('click', async () => {
+  if (dayLocked()) return lockedMessage();
   if (!confirm(`Route van dag ${currentDay} verwijderen uit de database?`)) return;
   const res = await fetch(api(`/routes/${currentDay}`), {
     method: 'DELETE',
@@ -881,6 +943,7 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
     loadingRoutes = false;
     clearTimeout(draftTimers[currentDay]);
     draftCounts[currentDay] = 0;
+    days[currentDay].published = false;
     days[currentDay].crossings = [];
     refreshVrLayer();
     updateDraftStatus();
@@ -901,6 +964,7 @@ async function loadSavedRoutes() {
     for (const row of rows) {
       days[row.day].crossings = row.crossings || [];
       days[row.day].pause = row.pause || null;
+      days[row.day].published = (row.waypoints || []).length > 0;
       drawPauseMarker(row.day);
       loadDayPoints(row.day, row.waypoints, row);
     }

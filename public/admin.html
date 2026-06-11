@@ -70,7 +70,18 @@
             <button id="start-search">Zoek adres en zet start &amp; finish</button>
           </section>
 
-          <section>
+          <section id="locked-section" class="hidden">
+            <h2>Dag definitief</h2>
+            <p class="hint">
+              Deze dag is definitief: de route, het pauzepunt en de tussenpunten
+              zijn vergrendeld. Zet de dag terug naar concept om te kunnen
+              bewerken — bezoekers blijven de definitieve versie zien totdat je
+              de dag opnieuw definitief maakt.
+            </p>
+            <button id="unlock-btn" class="primary">Zet dag 1 terug naar concept</button>
+          </section>
+
+          <section id="draw-section">
             <h2>Route tekenen</h2>
             <p class="hint">
               Start en finish liggen vast en gelden voor alle dagen; versleep de
@@ -94,7 +105,7 @@
             <button id="revert-btn">Herstel vorige versie (Ctrl+Z)</button>
           </section>
 
-          <section>
+          <section id="pause-section">
             <h2>Pauzepunt</h2>
             <p class="hint">
               Markeer waar de stoet pauze houdt (drinken/fruit). Klik op de knop
@@ -103,18 +114,19 @@
             <button id="pause-btn">Pauzepunt plaatsen (dag 1)</button>
           </section>
 
-          <section>
+          <section id="publish-section">
             <h2>Definitief maken</h2>
             <p class="hint">
               Elke wijziging wordt automatisch als concept bewaard — bezoekers
               zien alleen de definitieve versie. Definitief maken publiceert de
-              route en wist alle tussenversies.
+              route, wist alle tussenversies en vergrendelt de dag; bewerken kan
+              daarna pas weer na "terug naar concept".
             </p>
             <button id="save-btn" class="primary">Maak route dag 1 definitief</button>
             <button id="delete-btn">Verwijder route dag 1</button>
           </section>
 
-          <section>
+          <section id="move-section">
             <h2>Route verplaatsen</h2>
             <p class="hint">
               Verplaatst alles van deze dag — route, concepten, pauzepunt,

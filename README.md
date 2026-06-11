@@ -22,7 +22,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
-- **"Maak route dag X definitief"** publiceert de route voor bezoekers en ruimt alle tussenversies op; er is precies één definitieve route per dag.
+- **"Maak route dag X definitief"** publiceert de route voor bezoekers, ruimt alle tussenversies op en **vergrendelt de dag**: route, pauzepunt en tussenpunten zijn dan niet meer te bewerken. Wil je toch iets aanpassen, zet de dag dan eerst terug naar concept (knop in de zijbalk) — bezoekers blijven de definitieve versie zien totdat je opnieuw publiceert. De verkeersmodus (oversteekpunten en teams) blijft op een definitieve dag gewoon werken.
 - **Pauzepunt**: markeer per dag waar de stoet pauze houdt (knop "Pauzepunt plaatsen", daarna klikken op de route; versleepbaar en blijft altijd op de route). Zichtbaar voor bezoekers, verkeersregelaars en op de printversie.
 
 ## Sponsoracties (promotie vóór het evenement)
