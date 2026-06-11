@@ -241,7 +241,7 @@ async function openStreetView(lat, lng) {
   // nuttig — verder weg heb je er niets aan. De afstand wordt zelf
   // nagemeten en elk antwoord gevalideerd, want de service geeft soms een
   // leeg resultaat of negeert de opgegeven straal.
-  const MAX_SV_DIST = 75;
+  const MAX_SV_DIST = 10;
   const svc = new google.maps.StreetViewService();
   const attempts = [
     { sources: [google.maps.StreetViewSource.OUTDOOR] },
