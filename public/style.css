@@ -402,6 +402,13 @@ details > *:not(summary) { margin-top: 0.5rem; }
   }
   /* De kaart krijgt altijd minstens dit stuk van het scherm. */
   #map-container { min-height: 240px; }
+
+  /* /verkeer: het tijdschema (met navigeerknoppen) volledig en direct
+     zichtbaar; de hele pagina scrolt en de kaart staat eronder. */
+  body.page-verkeer { height: auto; min-height: 100vh; min-height: 100dvh; }
+  body.page-verkeer main { flex: none; }
+  body.page-verkeer #sidebar { max-height: none; }
+  body.page-verkeer #map-container { height: 70vh; height: 70dvh; }
   #editor, #route-mode, #rec-mode, #vr-mode { gap: 0.7rem; }
   header { padding: 0.5rem 0.75rem; }
   header h1 { font-size: 0.95rem; }

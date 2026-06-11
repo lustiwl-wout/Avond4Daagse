@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/style.css" />
 </head>
-<body>
+<body class="page-verkeer">
   <header>
     <div class="brand">
       <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
@@ -40,9 +40,13 @@
 
       <p id="vr-warning" class="hint warning"></p>
 
-      <details id="info-details">
-        <summary>Mijn tijdschema & uitleg</summary>
+      <section>
+        <h2>Mijn tijdschema</h2>
         <ul id="vr-schedule"><li class="hint">Kies eerst je team.</li></ul>
+      </section>
+
+      <details id="info-details">
+        <summary>Uitleg</summary>
         <p class="hint">
           Ruitjes = oversteekpunten (jouw punten in jullie teamkleur). Per post:
           <strong>stoet komt aan</strong> = de kop van de stoet is er,
