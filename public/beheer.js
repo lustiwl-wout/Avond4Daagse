@@ -93,12 +93,48 @@ async function loadEvents() {
       name.textContent = ev.name;
       li.appendChild(name);
       const links = document.createElement('span');
-      links.innerHTML = `<a href="/${ev.slug}">bekijken</a> · <a href="/${ev.slug}/admin">beheer</a>`;
+      links.innerHTML = `<a href="/${ev.slug}">bekijken</a> · <a href="/${ev.slug}/admin">beheer</a> · `;
+      const pwdLink = document.createElement('a');
+      pwdLink.href = '#';
+      pwdLink.textContent = 'wachtwoord';
+      pwdLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        changeEventPassword(ev);
+      });
+      links.appendChild(pwdLink);
       li.appendChild(links);
       list.appendChild(li);
     }
   } catch {
     list.innerHTML = '<li class="hint">Let op: lijst laden mislukt.</li>';
+  }
+}
+
+// Beheerwachtwoord van een event wijzigen — met het master-wachtwoord.
+async function changeEventPassword(ev) {
+  const status = document.getElementById('list-status');
+  const master = document.getElementById('master-password').value;
+  if (!master) {
+    status.textContent = 'Vul eerst het master-wachtwoord in (bovenaan).';
+    return;
+  }
+  const newPwd = prompt(`Nieuw beheerwachtwoord voor "${ev.name}" (minstens 6 tekens):`);
+  if (newPwd === null) return;
+  if (newPwd.length < 6) {
+    status.textContent = 'Let op: het wachtwoord moet minstens 6 tekens lang zijn.';
+    return;
+  }
+  status.textContent = 'Wachtwoord wijzigen…';
+  const res = await fetch(`/api/${ev.slug}/admin/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'x-admin-password': master },
+    body: JSON.stringify({ password: newPwd }),
+  });
+  if (res.ok) {
+    status.textContent = `Beheerwachtwoord van "${ev.name}" gewijzigd.`;
+  } else {
+    const err = await res.json().catch(() => ({}));
+    status.textContent = 'Let op: ' + (err.error || 'wachtwoord wijzigen mislukt.');
   }
 }
 
