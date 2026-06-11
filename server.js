@@ -635,6 +635,28 @@ const OSRM_PROFILES = {
 
 // Route berekenen via OSRM (de router van openstreetmap.org): kent alle
 // voet- en fietspaden. De wandelroute gebruikt 'foot', teamroutes 'bike'.
+// Afslaginstructie van een OSRM-stap in het Nederlands.
+function stepText(step) {
+  const type = step.maneuver.type;
+  const name = step.name ? ` — ${step.name}` : '';
+  if (type === 'arrive') return 'je bent bij je post';
+  if (type === 'roundabout' || type === 'rotary') {
+    const exit = step.maneuver.exit ? `de ${step.maneuver.exit}e afslag` : 'de rotonde volgen';
+    return `op de rotonde ${exit}${name}`;
+  }
+  const dirs = {
+    left: 'linksaf',
+    right: 'rechtsaf',
+    'slight left': 'flauw links aanhouden',
+    'slight right': 'flauw rechts aanhouden',
+    'sharp left': 'scherp linksaf',
+    'sharp right': 'scherp rechtsaf',
+    straight: 'rechtdoor',
+    uturn: 'omkeren',
+  };
+  return `${dirs[step.maneuver.modifier] || 'rechtdoor'}${name}`;
+}
+
 // Navigatie voor verkeersregelaars (publiek, /verkeer heeft geen wachtwoord):
 // fietsroute van de huidige positie naar een post, om de stoet heen. OSRM
 // levert alternatieven; gekozen wordt de eerste route die de wandelroute
@@ -654,7 +676,7 @@ app.post('/api/navigate', async (req, res) => {
     }
     const walkPath = rows[0].path;
     const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
-    const url = `${OSRM_PROFILES.bike}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=3`;
+    const url = `${OSRM_PROFILES.bike}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=3&steps=true`;
     const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
@@ -666,8 +688,16 @@ app.post('/api/navigate', async (req, res) => {
       // ligt immers óp de wandelroute).
       const conflicts = findConflicts(path, walkPath, [from, to], { excludeDist: 60 });
       const overlapM = Math.round(overlapLength(path, walkPath, 15));
+      const steps = ((r.legs && r.legs[0] && r.legs[0].steps) || [])
+        .filter((s) => s.maneuver.type !== 'depart')
+        .map((s) => ({
+          lat: s.maneuver.location[1],
+          lng: s.maneuver.location[0],
+          text: stepText(s),
+        }));
       return {
         path,
+        steps,
         distance_m: Math.round(r.distance),
         duration_s: Math.round(r.duration),
         conflicts,

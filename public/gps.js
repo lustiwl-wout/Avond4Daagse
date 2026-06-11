@@ -1,7 +1,7 @@
 // Gedeelde GPS-volgfunctie (Leaflet) voor alle pagina's. Verwacht in de
 // pagina: #gps-start, #gps-stop, #follow-label met #follow-me, en #gps-status.
 // `getMap` levert de Leaflet-kaart; `onFix` (optioneel) krijgt elke positie.
-function setupGps(getMap, onFix) {
+function setupGps(getMap, onFix, onStop) {
   let watchId = null;
   let posMarker = null;
   let accuracyCircle = null;
@@ -44,6 +44,7 @@ function setupGps(getMap, onFix) {
     startBtn.classList.remove('hidden');
     stopBtn.classList.add('hidden');
     if (followLabel) followLabel.classList.add('hidden');
+    if (onStop) onStop();
   }
 
   function onPosition(position) {

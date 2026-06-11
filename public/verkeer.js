@@ -17,8 +17,16 @@ let lastSortedCrossings = [];
 // Navigatie: fietsroute van je GPS-positie naar je post, om de stoet heen.
 let navTarget = null;
 let navLayers = [];
+let navPath = null;
+let navSteps = [];
 let lastNavAt = 0;
 let lastNavPos = null;
+
+// In navigatie (GPS aan + doel gekozen) toont de kaart alleen jouw route;
+// de rest is dan ballast.
+function navFocus() {
+  return navTarget !== null && gps.isActive();
+}
 
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
@@ -101,22 +109,24 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     document.querySelector('.day-tab.active').classList.remove('active');
     tab.classList.add('active');
     selectedDay = Number(tab.dataset.day);
+    stopNav();
     refreshView();
   });
 });
 
 document.getElementById('vr-team').addEventListener('change', (e) => {
   selectedTeam = e.target.value;
+  stopNav();
   refreshView();
 });
 
 function refreshView() {
-  stopNav();
   vrLayers.forEach((l) => l.remove());
   vrLayers = [];
+  const focus = navFocus();
   for (let day = 1; day <= 4; day++) {
     if (!walkRoutes[day]) continue;
-    if (day === selectedDay) {
+    if (day === selectedDay && !focus) {
       walkRoutes[day].line.addTo(map);
       walkRoutes[day].arrows.addTo(map);
     } else {
@@ -133,6 +143,25 @@ function refreshView() {
     renderSchedule(null);
     return;
   }
+  // Nummering volgt de looprichting: nodig voor schema én navigatie.
+  const order = new Map();
+  route.crossings.forEach((c) => order.set(c, nearestOnPath(route.path, c).along));
+  lastSortedCrossings = [...route.crossings].sort((a, b) => order.get(a) - order.get(b));
+
+  // Navigatiefocus: alleen jouw route en je bestemming, de rest is ballast.
+  if (focus) {
+    const assigned = crossingTeams(navTarget).map(teamById).filter(Boolean);
+    vrLayers.push(
+      L.marker([navTarget.lat, navTarget.lng], {
+        icon: diamondIcon(crossingColor(assigned), '', false),
+        zIndexOffset: 600,
+        title: `Jouw post: ${navTarget.name}`,
+      }).addTo(map)
+    );
+    renderSchedule(selectedTeam === 'all' ? null : Number(selectedTeam));
+    return;
+  }
+
   map.fitBounds(route.bounds.pad(0.07));
   if (route.crossings.length === 0) {
     warningEl.textContent = 'Er zijn nog geen oversteekpunten gepubliceerd voor deze dag.';
@@ -149,14 +178,8 @@ function refreshView() {
 
   const teamFilter = selectedTeam === 'all' ? null : Number(selectedTeam);
 
-  // Nummering volgt de looprichting: sorteren op afstand langs de route.
-  const order = new Map();
-  route.crossings.forEach((c) => order.set(c, nearestOnPath(route.path, c).along));
-  const sortedCrossings = [...route.crossings].sort((a, b) => order.get(a) - order.get(b));
-  lastSortedCrossings = sortedCrossings;
-
   let index = 0;
-  for (const c of sortedCrossings) {
+  for (const c of lastSortedCrossings) {
     index++;
     const assigned = crossingTeams(c).map(teamById).filter(Boolean);
     const isMine = teamFilter === null || crossingTeams(c).includes(teamFilter);
@@ -281,8 +304,48 @@ function clearNavLayers() {
 
 function stopNav() {
   navTarget = null;
+  navPath = null;
+  navSteps = [];
   clearNavLayers();
   setNavStatus('');
+  setInstruction('');
+  document.getElementById('nav-google').classList.add('hidden');
+}
+
+function setInstruction(text) {
+  const el = document.getElementById('nav-instruction');
+  el.textContent = text;
+  el.classList.toggle('hidden', !text);
+}
+
+// "Over X m: linksaf — Kornetstraat": de eerstvolgende handeling op de route.
+function updateInstruction(pos) {
+  if (!navPath || navSteps.length === 0) return;
+  const cur = nearestOnPath(navPath, pos);
+  if (cur.dist > 60) {
+    setInstruction('Je bent naast de route — de route wordt zo bijgewerkt.');
+    return;
+  }
+  const next = navSteps.find((s) => s.along > cur.along + 8);
+  if (!next) {
+    setInstruction('Je bent (bijna) bij je post.');
+    return;
+  }
+  const dist = Math.max(10, Math.round((next.along - cur.along) / 10) * 10);
+  setInstruction(`Over ${dist} m: ${next.text}`);
+}
+
+// Google Maps-link met via-punten van ónze stoet-vrije route, zodat je met
+// stemnavigatie toch om de stoet heen wordt geleid.
+function updateGoogleLink(r) {
+  const el = document.getElementById('nav-google');
+  const dest = `${navTarget.lat},${navTarget.lng}`;
+  const vias = [0.25, 0.5, 0.75]
+    .map((f) => r.path[Math.floor(f * (r.path.length - 1))])
+    .map((p) => `${p.lat},${p.lng}`)
+    .join('|');
+  el.href = `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=bicycling&waypoints=${encodeURIComponent(vias)}`;
+  el.classList.remove('hidden');
 }
 
 // Fietsroute berekenen: de server kiest een route om de stoet heen (ook als
@@ -309,6 +372,12 @@ async function computeNav(pos) {
     }
     const r = await res.json();
     clearNavLayers();
+    navPath = r.path;
+    // Posities van de afslagen langs de route, voor "over X m: ...".
+    navSteps = (r.steps || []).map((s) => ({
+      along: nearestOnPath(r.path, s).along,
+      text: s.text,
+    }));
     navLayers.push(
       L.polyline(r.path.map((p) => [p.lat, p.lng]), {
         color: '#111827',
@@ -335,6 +404,9 @@ async function computeNav(pos) {
         ? `Fietsroute naar je post: ${min} min (${km} km), om de stoet heen.`
         : `Let op: er is geen route die de stoet vermijdt — kruis op de gemarkeerde plek met beleid (stap af) of wacht tot de stoet voorbij is. ${min} min (${km} km).`
     );
+    updateGoogleLink(r);
+    updateInstruction(pos);
+    refreshView();
   } catch {
     setNavStatus('Let op: fietsroute berekenen mislukt — probeer het opnieuw.');
   }
@@ -352,6 +424,7 @@ function onGpsFix(pos) {
     }
   }
   if (!navTarget) return;
+  updateInstruction(pos);
   if (Date.now() - lastNavAt < 20000) return;
   if (lastNavPos && distM(lastNavPos, pos) < 40) return;
   computeNav(pos);
@@ -387,5 +460,9 @@ function fmtMoment(min) {
   return `+${min} min`;
 }
 
-const gps = setupGps(() => map, onGpsFix);
+const gps = setupGps(() => map, onGpsFix, () => {
+  // GPS uit: navigatie stoppen en de volledige weergave terughalen.
+  stopNav();
+  refreshView();
+});
 init();
