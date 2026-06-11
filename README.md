@@ -27,7 +27,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 ## Sponsoracties (promotie vóór het evenement)
 
-- Stel in de admin (Sponsoracties & evenement) de **eerste loopdag** in. Tot die datum staat op de bezoekerspagina de oproep *"Wij zoeken nog sponsoren — heb jij een leuke actie om onze avondvierdaagse geweldig te maken?"*.
+- Stel in de admin (Sponsoracties & evenement) de **eerste loopdag** in. Tot die datum staat op de bezoekerspagina de knop "Plan jouw sponsoractie".
 - Bezoekers kiezen een plek op de route en laten voornaam, achternaam, e-mail, telefoon en hun actie achter. De plek verschijnt als ster op de kaart (publiek alleen de actie, geen persoonsgegevens).
 - Vanaf de eerste loopdag verdwijnt de aanmeldoptie automatisch; de sterren blijven zichtbaar.
 - De admin ziet alle aanmeldingen met contactgegevens en kan ze verwijderen.
