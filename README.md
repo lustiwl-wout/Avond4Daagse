@@ -33,8 +33,8 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 
 **In de admin** (`/admin` → modus "🦺 Verkeersregelaars"):
 
-- **Kruisingen detecteren** (volautomatisch na het publiceren van een route): de wegendata komt van **OpenStreetMap** — dé kaartbron die voetpaden, fietspaden én alle zijstraten kent, in tegenstelling tot Googles Roads API die alleen autowegen bevat. Elke plek waar de route een weg kruist of waar een (zij)weg op de gelopen straat uitkomt wordt een genummerd ruitje op de kaart, met de straatnaam erbij. Hier is geen key of knop voor nodig.
-- Klik op een ruitje om het punt te **verbergen** (route blijft gelijk, punt telt niet meer mee in de planning), een **team toe te wijzen** of **Street View** te openen. Klik op de kaart om **zelf een extra punt toe te voegen** (blijft staan bij herdetectie).
+- **Oversteekpunten zet de verkeersleider zelf op de kaart**: klik in de verkeersmodus op de route waar verkeersregelaars moeten staan. Het punt snapt naar de route en krijgt automatisch de straatnaam (Nominatim). De punten verschijnen als genummerde ruitjes, in routevolgorde.
+- Klik op een ruitje om een **team toe te wijzen**, **Street View** te openen of het punt te **verwijderen**.
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
 - **De planning loopt volautomatisch**: na elke routepublicatie of teamwijziging worden de punten over de teams verdeeld (haasje-over) en de fietsroutes per team (start → posten → finish, stippellijn) berekend, met twee controles:
   - **Tijdstoets**: een team mag pas vertrekken als de héle groep (±500 wandelaars, instelbare passeertijd) voorbij is, en moet zijn volgende post bereiken vóór de kop van de groep daar aankomt. Wandeltempo, passeertijd, fietstempo en veiligheidsmarge zijn instelbaar. Haalt een team het niet, dan zie je precies welke post en hoeveel minuten te laat.
@@ -56,7 +56,7 @@ npm start              # http://localhost:3000
 ## Kaarten en routes: OpenStreetMap — Google alleen voor Street View
 
 - **Kaartweergave**: Leaflet met OpenStreetMap-tegels (gratis, geen key).
-- **Routes**: OSRM via de routers van openstreetmap.org — voetprofiel voor de wandelroute, fietsprofiel voor de teamroutes. Zelfde wegendata als de kruisingdetectie, dus alles sluit exact op elkaar aan.
+- **Routes**: OSRM via de routers van openstreetmap.org — voetprofiel voor de wandelroute, fietsprofiel voor de teamroutes.
 - **Adressen en straatnamen**: Nominatim (server-side, met cache en nette throttling).
 - **Street View**: het enige Google-onderdeel. Overlay-panorama op de kaartpagina's en foto's vanuit vier windrichtingen op de printversie.
 

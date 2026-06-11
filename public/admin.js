@@ -609,7 +609,6 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     updateDayLabels();
     updateInfo();
     refreshVrLayer();
-    maybeAutoDetect();
   });
 });
 
@@ -628,7 +627,6 @@ function setEditMode(m) {
     days[day].markers.forEach((mk) => (m === 'vr' ? mk.remove() : mk.addTo(map)));
   }
   refreshVrLayer();
-  maybeAutoDetect();
 }
 
 document.getElementById('mode-route').addEventListener('click', () => setEditMode('route'));
@@ -692,8 +690,8 @@ async function saveCurrentDay() {
     draftCounts[currentDay] = 0;
     updateDraftStatus();
     setSaveStatus(`Route dag ${currentDay} is nu definitief — tussenversies zijn opgeruimd.`);
-    // Route gewijzigd: oversteekpunten en planning op de achtergrond verversen.
-    detectCrossings(currentDay, true);
+    // Route gewijzigd: tijden en teamroutes kloppend houden met het nieuwe pad.
+    replanDay(currentDay, false);
   } else {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('Let op: ' + (err.error || 'publiceren mislukt.'));
@@ -901,62 +899,9 @@ function bikeMin(a, b) {
 
 const round1 = (n) => Math.round(n * 10) / 10;
 
-// --- Kruisingen detecteren ---
-// Draait automatisch na het publiceren van een route en bij het openen van
-// de verkeersmodus; daarna wordt automatisch gepland en getoetst.
-const detectingDays = new Set();
-
-async function detectCrossings(day, silent = false) {
-  const d = days[day];
-  if (!d.path || detectingDays.has(day)) return;
-  detectingDays.add(day);
-  if (!silent) setVrStatus('Kruisingen zoeken… (dit kan even duren)');
-  try {
-    const res = await fetch(`/api/admin/crossings/${day}`, {
-      method: 'POST',
-      headers: adminHeaders(true),
-      body: JSON.stringify({ path: d.path }),
-    });
-    if (res.ok) {
-      d.crossings = await res.json();
-      refreshVrLayer();
-      if (!silent && d.crossings.length === 0) {
-        setVrStatus('Let op: geen kruisingen gevonden — is de route gepubliceerd?');
-      }
-      // Route of punten gewijzigd: direct automatisch herplannen en toetsen.
-      if (d.crossings.length > 0 && teams.length > 0) {
-        if (!silent) setVrStatus(`${d.crossings.length} oversteekpunten gevonden — teams plannen…`);
-        await replanDay(day, true);
-      } else if (!silent && d.crossings.length > 0) {
-        setVrStatus(
-          `${d.crossings.length} oversteekpunten gevonden. Maak teams aan, dan worden ze automatisch ingepland.`
-        );
-      }
-    } else if (!silent) {
-      const err = await res.json().catch(() => ({}));
-      setVrStatus('Let op: ' + (err.error || 'detecteren mislukt.'));
-    }
-  } catch {
-    if (!silent) setVrStatus('Let op: detecteren mislukt — server niet bereikbaar.');
-  } finally {
-    detectingDays.delete(day);
-  }
-}
-
-// Automatisch detecteren zodra de verkeersmodus opengaat zonder kruisingen,
-// of wanneer de punten nog van een oudere detectiemethode komen.
-function maybeAutoDetect() {
-  const d = days[currentDay];
-  if (editMode !== 'vr' || !d.path) return;
-  const crossings = d.crossings || [];
-  if (crossings.length === 0 || !crossings.some((c) => c.src === 'osm')) {
-    detectCrossings(currentDay);
-  }
-}
-
-// Handmatig een oversteekpunt toevoegen (klik op de kaart in verkeersmodus);
-// alleen mogelijk óp de wandelroute: een klik vlak naast de route wordt op de
-// route gesnapt, verder weg wordt geweigerd. Blijft staan bij herdetectie.
+// Oversteekpunt toevoegen (klik op de kaart in verkeersmodus); alleen
+// mogelijk óp de wandelroute: een klik vlak naast de route wordt op de
+// route gesnapt, verder weg wordt geweigerd.
 const MANUAL_SNAP_M = 50;
 
 async function addManualCrossing(clicked) {
@@ -973,7 +918,7 @@ async function addManualCrossing(clicked) {
     return;
   }
   const point = { lat: nearest.lat, lng: nearest.lng };
-  let name = 'eigen punt';
+  let name = 'oversteekpunt';
   try {
     const res = await fetch(`/api/address?lat=${point.lat}&lng=${point.lng}`);
     if (res.ok) {
@@ -990,11 +935,10 @@ async function addManualCrossing(clicked) {
     name,
     hidden: false,
     team: null,
-    manual: true,
   });
   await saveCrossings(currentDay);
   refreshVrLayer();
-  setVrStatus(`Eigen punt "${name}" toegevoegd. Wijs er via het ruitje een team aan toe.`);
+  setVrStatus(`Punt "${name}" toegevoegd. Wijs er via het ruitje een team aan toe.`);
 }
 
 async function saveCrossings(day) {
@@ -1075,28 +1019,15 @@ function openCrossingMenu(c, marker) {
   );
 
   div.appendChild(
-    menuButton(c.hidden ? 'Weer tonen in planning' : 'Verberg voor planning', async () => {
-      c.hidden = !c.hidden;
-      if (c.hidden) c.team = null;
+    menuButton('Verwijder dit punt', async () => {
+      const d = days[currentDay];
+      d.crossings = d.crossings.filter((x) => x !== c);
       await saveCrossings(currentDay);
       map.closePopup();
       refreshVrLayer();
       await replanDay(currentDay, false);
     })
   );
-
-  if (c.manual) {
-    div.appendChild(
-      menuButton('Verwijder dit eigen punt', async () => {
-        const d = days[currentDay];
-        d.crossings = d.crossings.filter((x) => x !== c);
-        await saveCrossings(currentDay);
-        map.closePopup();
-        refreshVrLayer();
-        await replanDay(currentDay, false);
-      })
-    );
-  }
 
   openMapMenu(map, marker.getLatLng(), div);
 }
@@ -1202,7 +1133,7 @@ async function autoplanDay(day) {
   refreshVrLayer();
   if (unassigned > 0) {
     setVrStatus(
-      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verberg punten.`
+      `Let op: ${unassigned} van de ${ordered.length} punten kunnen met ${teams.length} team(s) niet op tijd bemand worden (een team bemant één punt tegelijk) — voeg teams toe of verwijder punten.`
     );
   } else {
     setVrStatus(`Alle ${ordered.length} punten verdeeld over ${teams.length} team(s).`);
@@ -1310,7 +1241,7 @@ async function computeTeamRoutesForDay(day) {
 }
 
 // De hele planningsketen: punten verdelen en teamroutes berekenen/toetsen.
-// Draait automatisch na detectie, teamwijzigingen en toewijzingen.
+// Draait automatisch na teamwijzigingen, toewijzingen en routepublicatie.
 async function replanDay(day, reassign) {
   if (reassign) await autoplanDay(day);
   await computeTeamRoutesForDay(day);

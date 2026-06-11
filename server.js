@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { distanceM, findConflicts, findCrossings } = require('./geometry');
+const { findConflicts } = require('./geometry');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -657,106 +657,10 @@ app.get('/api/address', async (req, res) => {
   }
 });
 
-// --- Verkeersregelaars: kruisingdetectie, teams en teamroutes ---
+// --- Verkeersregelaars: oversteekpunten, teams en teamroutes ---
+// Oversteekpunten worden handmatig door de verkeersleider op de kaart gezet.
 
-// Wegtypen waar verkeer kan rijden (auto's, fietsen, bussen).
-const HIGHWAY_FILTER =
-  '^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|' +
-  'tertiary|tertiary_link|unclassified|residential|living_street|service|busway|cycleway|track)$';
-
-// Wegendata (inclusief fiets- en wandelinfrastructuur) komt van OpenStreetMap
-// via Overpass — dé kaartbron die voor voetgangers gemaakt is. Meerdere
-// servers, want de publieke zijn soms even druk.
-async function fetchOsmWays(walkPath) {
-  const margin = 0.0015;
-  const lats = walkPath.map((p) => p.lat);
-  const lngs = walkPath.map((p) => p.lng);
-  const bbox = [
-    Math.min(...lats) - margin,
-    Math.min(...lngs) - margin,
-    Math.max(...lats) + margin,
-    Math.max(...lngs) + margin,
-  ].join(',');
-  const query = `[out:json][timeout:25];way["highway"~"${HIGHWAY_FILTER}"](${bbox});out geom;`;
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter',
-  ];
-  for (const endpoint of endpoints) {
-    try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OSM_UA },
-        body: 'data=' + encodeURIComponent(query),
-      });
-      if (resp.ok) {
-        const osm = await resp.json();
-        return (osm.elements || []).filter((e) => e.type === 'way' && e.geometry);
-      }
-      console.error(`Overpass ${endpoint} antwoordde ${resp.status}`);
-    } catch (err) {
-      console.error(`Overpass ${endpoint} niet bereikbaar:`, err.message);
-    }
-  }
-  throw new Error('wegendata van OpenStreetMap is tijdelijk niet beschikbaar, probeer het zo opnieuw');
-}
-
-// Admin: detecteer alle kruisingen langs de wandelroute. De wegendata
-// (inclusief fietspaden en zijstraten) komt van OpenStreetMap; eerder
-// verborgen punten, teamtoewijzingen en handmatig toegevoegde punten
-// blijven behouden.
-app.post('/api/admin/crossings/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { path: walkPath } = req.body;
-  if (!Array.isArray(walkPath) || walkPath.length < 2 || !walkPath.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Geen routepad meegestuurd. Teken eerst de route.' });
-  }
-  try {
-    const { rows: existingRows } = await pool.query(
-      'SELECT crossings FROM day_routes WHERE day = $1',
-      [day]
-    );
-    if (existingRows.length === 0) {
-      return res.status(404).json({ error: 'Sla eerst de route van deze dag op.' });
-    }
-    const existing = existingRows[0].crossings || [];
-
-    const ways = await fetchOsmWays(walkPath);
-    const detected = findCrossings(walkPath, ways);
-
-    const crossings = detected.map((c) => {
-      const match = existing.find((e) => distanceM(e, c) < 25);
-      return {
-        id: `${Math.round(c.lat * 1e5)}x${Math.round(c.lng * 1e5)}`,
-        lat: c.lat,
-        lng: c.lng,
-        name: c.name,
-        src: 'osm', // markeert dat dit punt met de OSM-detectie is gevonden
-        hidden: match ? !!match.hidden : false,
-        team: match && match.team != null ? match.team : null,
-      };
-    });
-    // Handmatig toegevoegde punten blijven altijd staan (tenzij er nu een
-    // gedetecteerd punt vlakbij ligt).
-    for (const e of existing) {
-      if (e.manual && !crossings.some((c) => distanceM(c, e) < 25)) crossings.push(e);
-    }
-
-    await pool.query('UPDATE day_routes SET crossings = $1, updated_at = now() WHERE day = $2', [
-      JSON.stringify(crossings),
-      day,
-    ]);
-    res.json(crossings);
-  } catch (err) {
-    console.error('Kruisingdetectie mislukt:', err);
-    res.status(502).json({ error: `Kruisingen detecteren mislukt: ${err.message}` });
-  }
-});
-
-// Admin: kruisingen bijwerken (verbergen/tonen, teamtoewijzing).
+// Admin: kruisingen bijwerken (toevoegen, verbergen/tonen, teamtoewijzing).
 app.put('/api/admin/crossings/:day', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
