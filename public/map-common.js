@@ -2,10 +2,26 @@
 // Google wordt alleen nog gebruikt voor Street View (overlay + printfoto's).
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 
-// Event-slug uit het URL-pad (/syncope, /syncope/verkeer, …).
-const SLUG = decodeURIComponent((location.pathname.split('/')[1] || '').toLowerCase());
+// Event-slug: uit het URL-pad (a4droute.nl/syncope/…) of, op een eigen
+// domein met subdomeinen, uit de hostnaam (syncope.a4droute.nl).
+const PATH_SEG = decodeURIComponent((location.pathname.split('/')[1] || '').toLowerCase());
+const PAGE_SEGS = new Set(['', 'verkeer', 'admin', 'print', 'api']);
+const HOST_LABELS = location.hostname.split('.');
+const SLUG_FROM_HOST =
+  PAGE_SEGS.has(PATH_SEG) &&
+  HOST_LABELS.length > 2 &&
+  HOST_LABELS[0] !== 'www' &&
+  !location.hostname.endsWith('.onrender.com');
+const SLUG = SLUG_FROM_HOST ? HOST_LABELS[0].toLowerCase() : PATH_SEG;
+
 function api(p) {
   return `/api/${SLUG}${p}`;
+}
+
+// Link naar een pagina van dit event ('' = bezoekerspagina), passend bij de
+// manier waarop de site geopend is (subdomein of pad).
+function eventUrl(p) {
+  return SLUG_FROM_HOST ? p || '/' : `/${SLUG}${p || ''}`;
 }
 
 function createMap(elementId, center, zoom) {

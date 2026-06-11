@@ -13,7 +13,8 @@ const port = process.env.PORT || 3000;
 // elk event — handig voor de platformbeheerder.
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// index: false — '/' beslist zelf (landing of, op een subdomein, het event).
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
@@ -918,23 +919,60 @@ eventApi.delete('/admin/sponsors/:id', async (req, res) => {
 });
 
 // --- Pagina's ---
+// Events zijn bereikbaar via een pad (a4droute.nl/syncope) én — met
+// BASE_DOMAIN ingesteld — via een subdomein (syncope.a4droute.nl).
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+const BASE_DOMAIN = (process.env.BASE_DOMAIN || '').toLowerCase();
+
+function slugFromHost(req) {
+  if (!BASE_DOMAIN) return null;
+  const host = String(req.headers.host || '').toLowerCase().split(':')[0];
+  if (!host.endsWith('.' + BASE_DOMAIN)) return null;
+  const sub = host.slice(0, host.length - BASE_DOMAIN.length - 1);
+  if (!sub || sub === 'www' || sub.includes('.') || !SLUG_RE.test(sub) || RESERVED_SLUGS.has(sub)) {
+    return null;
+  }
+  return sub;
+}
+
+async function eventExists(slug) {
+  if (!pool) return true; // de API meldt databaseproblemen zelf
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
+    return rows.length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function sendPage(res, file) {
+  res.sendFile(path.join(__dirname, 'public', file));
+}
+
+app.get('/', async (req, res) => {
+  const hostSlug = slugFromHost(req);
+  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'index.html');
+  sendPage(res, 'landing.html');
 });
+
+// Op een subdomein staan de subpagina's direct in de root.
+for (const [route, file] of [
+  ['/verkeer', 'verkeer.html'],
+  ['/admin', 'admin.html'],
+  ['/print', 'print.html'],
+]) {
+  app.get(route, async (req, res) => {
+    const hostSlug = slugFromHost(req);
+    if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, file);
+    res.redirect('/');
+  });
+}
 
 async function serveEventPage(req, res, file) {
   const slug = String(req.params.slug).toLowerCase();
   if (RESERVED_SLUGS.has(slug) || !SLUG_RE.test(slug)) return res.redirect('/');
-  if (pool) {
-    try {
-      const { rows } = await pool.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
-      if (rows.length === 0) return res.redirect('/');
-    } catch {
-      // bij databaseproblemen toch de pagina tonen; de API meldt de fout
-    }
-  }
-  res.sendFile(path.join(__dirname, 'public', file));
+  if (!(await eventExists(slug))) return res.redirect('/');
+  sendPage(res, file);
 }
 
 app.get('/:slug', (req, res) => serveEventPage(req, res, 'index.html'));

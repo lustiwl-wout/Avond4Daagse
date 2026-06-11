@@ -20,7 +20,7 @@ if (window.innerWidth > 720) document.getElementById('info-details').open = true
 async function init() {
   const res = await fetch(api('/config'));
   const config = await res.json();
-  document.getElementById('back-link').href = `/${SLUG}`;
+  document.getElementById('back-link').href = eventUrl('');
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');

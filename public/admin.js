@@ -98,7 +98,7 @@ async function init() {
   schedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
 
-  document.getElementById('back-link').href = `/${SLUG}`;
+  document.getElementById('back-link').href = eventUrl('');
   map = createMap('map', startFinish || NL_CENTER, startFinish ? 15 : 8);
 
   for (let day = 1; day <= 4; day++) {
@@ -823,7 +823,7 @@ document.getElementById('move-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('print-btn').addEventListener('click', () => {
-  window.open(`/${SLUG}/print?day=${currentDay}`, '_blank');
+  window.open(eventUrl(`/print?day=${currentDay}`), '_blank');
 });
 
 document.getElementById('delete-btn').addEventListener('click', async () => {

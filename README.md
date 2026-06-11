@@ -80,6 +80,17 @@ npm start              # http://localhost:3000
    `postgresql://...@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`.
 3. Meer hoef je niet te doen: de app maakt de `day_routes`-tabel zelf aan bij het opstarten.
 
+## Eigen domein met subdomeinen per event (optioneel)
+
+Standaard zijn events bereikbaar via een pad: `a4droute.nl/syncope`. Mooier is een subdomein per event: `syncope.a4droute.nl`. Zo zet je dat aan:
+
+1. Koop een domein (bv. `a4droute.nl`) en voeg het in Render toe onder **Settings → Custom Domains**: zowel `a4droute.nl` als `*.a4droute.nl` (wildcard).
+2. Zet bij je registrar de DNS-records die Render toont (A-record voor het hoofddomein, CNAME/wildcard voor `*`).
+3. Zet de omgevingsvariabele `BASE_DOMAIN=a4droute.nl` in Render.
+4. Voeg in de Google Cloud Console `https://a4droute.nl/*` en `https://*.a4droute.nl/*` toe aan de referrer-restrictie van je key (anders valt Street View stil).
+
+Beide vormen blijven daarna werken, ook de oude `*.onrender.com`-URL.
+
 ## Stap 3 — Deployen op Render
 
 1. Push deze repository naar GitHub.
@@ -88,6 +99,7 @@ npm start              # http://localhost:3000
    - `DATABASE_URL` = je Neon-connectiestring
    - `GOOGLE_MAPS_API_KEY` = je Google Maps-key (Street View)
    - `ADMIN_PASSWORD` = master-wachtwoord van de platformbeheerder (optioneel; events hebben hun eigen wachtwoord)
+   - `BASE_DOMAIN` = eigen domein voor subdomeinen per event (optioneel, zie hierboven)
 4. Deploy — klaar! 🎉
 
 > De GPS-functie werkt alleen via HTTPS; op Render is dat automatisch geregeld.

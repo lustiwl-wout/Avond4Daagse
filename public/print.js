@@ -36,9 +36,9 @@ function fmtMoment(min) {
 async function init() {
   // Dag- en beheerlinks in de werkbalk op dit event richten.
   document.querySelectorAll('[data-day-link]').forEach((a) => {
-    a.href = `/${SLUG}/print?day=${a.dataset.dayLink}`;
+    a.href = eventUrl(`/print?day=${a.dataset.dayLink}`);
   });
-  document.getElementById('admin-link').href = `/${SLUG}/admin`;
+  document.getElementById('admin-link').href = eventUrl('/admin');
   const [cfgRes, routesRes, teamsRes] = await Promise.all([
     fetch(api('/config')),
     fetch(api('/routes')),

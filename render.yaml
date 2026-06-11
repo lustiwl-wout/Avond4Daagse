@@ -12,3 +12,5 @@ services:
         sync: false # Google Maps browser-key (website-restrictie), voor de kaarten op de site
       - key: ADMIN_PASSWORD
         sync: false # master-wachtwoord van de platformbeheerder (werkt op elk event; optioneel)
+      - key: BASE_DOMAIN
+        sync: false # eigen domein voor subdomeinen per event, bv. a4droute.nl (optioneel)
