@@ -145,13 +145,14 @@ async function migrateToEvents() {
   // Primaire sleutels van oude installaties verbreden naar (event_id, …).
   async function pkColumns(table) {
     const { rows } = await pool.query(
-      `SELECT array_agg(a.attname ORDER BY a.attnum) AS cols
+      `SELECT a.attname
        FROM pg_index i
        JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-       WHERE i.indrelid = $1::regclass AND i.indisprimary`,
+       WHERE i.indrelid = $1::regclass AND i.indisprimary
+       ORDER BY a.attnum`,
       [table]
     );
-    return (rows[0] && rows[0].cols) || [];
+    return rows.map((r) => r.attname);
   }
   if ((await pkColumns('day_routes')).join(',') === 'day') {
     await pool.query('ALTER TABLE day_routes DROP CONSTRAINT day_routes_pkey');
