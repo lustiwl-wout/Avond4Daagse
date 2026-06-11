@@ -49,7 +49,7 @@ async function init() {
   }
 
   await loadRoutes();
-  loadWeather();
+  loadRainNotice(config.defaultDay || 1);
 }
 
 async function loadRoutes() {
@@ -107,59 +107,38 @@ function showAnnouncement(text) {
   el.classList.toggle('hidden', !text);
 }
 
-// Weersverwachting per loopdag (Open-Meteo, zonder key). Alleen voor
-// datums binnen het voorspelbereik (~16 dagen).
-const weatherByDate = {};
+// Regenwaarschuwing: geen weerbericht per dag, maar één duidelijke
+// mededeling wanneer er grote kans op regen is op de eerstvolgende
+// loopdag (Open-Meteo, zonder key; verwachting reikt ~15 dagen vooruit).
+const RAIN_WARN_PCT = 60;
 
-const WEATHER_WORDS = [
-  [[0], 'zonnig'], [[1, 2], 'licht bewolkt'], [[3], 'bewolkt'],
-  [[45, 48], 'mist'], [[51, 53, 55, 56, 57], 'motregen'],
-  [[61, 63, 65, 66, 67], 'regen'], [[71, 73, 75, 77, 85, 86], 'sneeuw'],
-  [[80, 81, 82], 'buien'], [[95, 96, 99], 'onweer'],
-];
-
-function weatherWord(code) {
-  const hit = WEATHER_WORDS.find(([codes]) => codes.includes(code));
-  return hit ? hit[1] : '';
-}
-
-async function loadWeather() {
-  if (!startFinish || !schedule) return;
+async function loadRainNotice(day) {
+  const e = schedule && schedule[day];
+  if (!startFinish || !e || !e.date) return;
   const today = new Date().toISOString().slice(0, 10);
   const max = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
-  const dates = Object.values(schedule)
-    .map((e) => e && e.date)
-    .filter((d) => d && d >= today && d <= max)
-    .sort();
-  if (dates.length === 0) return;
+  if (e.date < today || e.date > max) return;
   try {
     const url =
       `https://api.open-meteo.com/v1/forecast?latitude=${startFinish.lat}&longitude=${startFinish.lng}` +
-      `&daily=weather_code,temperature_2m_max,precipitation_probability_max` +
-      `&timezone=Europe%2FAmsterdam&start_date=${dates[0]}&end_date=${dates[dates.length - 1]}`;
+      `&daily=precipitation_probability_max&timezone=Europe%2FAmsterdam` +
+      `&start_date=${e.date}&end_date=${e.date}`;
     const res = await fetch(url);
     if (!res.ok) return;
     const data = await res.json();
-    const d = data.daily || {};
-    (d.time || []).forEach((date, i) => {
-      weatherByDate[date] = {
-        word: weatherWord(d.weather_code[i]),
-        temp: Math.round(d.temperature_2m_max[i]),
-        rain: d.precipitation_probability_max[i],
-      };
-    });
-    renderDistanceList();
+    const rain = data.daily && data.daily.precipitation_probability_max[0];
+    if (rain == null || rain < RAIN_WARN_PCT) return;
+    const datum = new Intl.DateTimeFormat('nl-NL', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+    }).format(new Date(e.date + 'T12:00:00'));
+    const el = document.getElementById('rain-notice');
+    el.textContent = `Grote kans op regen op ${datum} (${rain}%) — denk aan een paraplu of regenkleding.`;
+    el.classList.remove('hidden');
   } catch {
-    // weer is een extraatje
+    // de waarschuwing is een extraatje
   }
-}
-
-function weatherText(day) {
-  const e = schedule && schedule[day];
-  const w = e && e.date && weatherByDate[e.date];
-  if (!w) return '';
-  const rain = w.rain != null && w.rain >= 20 ? ` · ${w.rain}% regen` : '';
-  return `${w.word ? w.word + ', ' : ''}${w.temp}°${rain}`;
 }
 
 function formatDayDate(day) {
@@ -181,8 +160,7 @@ function renderDistanceList() {
     const km = routes[day] && routes[day].distance_m
       ? (routes[day].distance_m / 1000).toFixed(1).replace('.', ',') + ' km'
       : 'nog geen route';
-    const weather = weatherText(day);
-    const when = formatDayDate(day) + (weather ? `<br>${weather}` : '');
+    const when = formatDayDate(day);
     const gpx = routes[day]
       ? ` · <a class="gpx-link" href="${api(`/gpx/${day}`)}" download>GPX</a>`
       : '';
