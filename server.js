@@ -748,25 +748,114 @@ eventApi.post('/admin/move-route', async (req, res) => {
   }
 });
 
-// Oversteekpunten bijwerken (toevoegen, teamtoewijzing, verwijderen).
-eventApi.put('/admin/crossings/:day', async (req, res) => {
+// Oversteekpunten: losse, atomaire bewerkingen per punt. De server werkt
+// de lijst onder een rijslot bij en stuurt de actuele lijst terug, zodat
+// twee schermen (of trage verzoeken) elkaars wijzigingen nooit overschrijven.
+async function withCrossings(eventId, day, mutate) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT crossings FROM day_routes WHERE event_id = $1 AND day = $2 FOR UPDATE',
+      [eventId, day]
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { status: 404, error: 'Geen route voor deze dag.' };
+    }
+    const crossings = mutate(rows[0].crossings || []);
+    if (!crossings) {
+      await client.query('ROLLBACK');
+      return { status: 404, error: 'Oversteekpunt niet gevonden (al verwijderd?).' };
+    }
+    await client.query(
+      'UPDATE day_routes SET crossings = $1, updated_at = now() WHERE event_id = $2 AND day = $3',
+      [JSON.stringify(crossings), eventId, day]
+    );
+    await client.query('COMMIT');
+    return { status: 200, crossings };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+function parseTeamIds(value) {
+  if (!Array.isArray(value)) return null;
+  const ids = value.map(Number).filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(ids)].slice(0, 2);
+}
+
+// Punt toevoegen.
+eventApi.post('/admin/crossings/:day', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const day = parseDay(req, res);
   if (day === null) return;
-  const { crossings } = req.body;
-  if (!Array.isArray(crossings) || !crossings.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Ongeldige kruisingenlijst.' });
-  }
+  const body = req.body || {};
+  if (!isValidLatLng(body)) return res.status(400).json({ error: 'Ongeldig punt.' });
+  const crossing = {
+    id: crypto.randomUUID(),
+    lat: body.lat,
+    lng: body.lng,
+    name: typeof body.name === 'string' ? body.name.slice(0, 120) : 'oversteekpunt',
+    hidden: false,
+    teams: parseTeamIds(body.teams) || [],
+  };
+  crossing.team = crossing.teams[0] ?? null; // oudere lezers blijven werken
   try {
-    const { rowCount } = await pool.query(
-      'UPDATE day_routes SET crossings = $1, updated_at = now() WHERE event_id = $2 AND day = $3',
-      [JSON.stringify(crossings), req.event.id, day]
-    );
-    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
-    res.status(204).end();
+    const out = await withCrossings(req.event.id, day, (list) => [...list, crossing]);
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    res.status(201).json({ crossing, crossings: out.crossings });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Kruisingen opslaan mislukt.' });
+    res.status(500).json({ error: 'Oversteekpunt opslaan mislukt.' });
+  }
+});
+
+// Punt bijwerken (teamtoewijzing of naam).
+eventApi.put('/admin/crossings/:day/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const body = req.body || {};
+  try {
+    const out = await withCrossings(req.event.id, day, (list) => {
+      const c = list.find((x) => String(x.id) === req.params.id);
+      if (!c) return null;
+      if (body.teams !== undefined) {
+        const teams = parseTeamIds(body.teams);
+        if (teams === null) return null;
+        c.teams = teams;
+        c.team = teams[0] ?? null;
+      }
+      if (typeof body.name === 'string') c.name = body.name.slice(0, 120);
+      return list;
+    });
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    res.json({ crossings: out.crossings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Oversteekpunt bijwerken mislukt.' });
+  }
+});
+
+// Punt verwijderen.
+eventApi.delete('/admin/crossings/:day/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    const out = await withCrossings(req.event.id, day, (list) => {
+      const rest = list.filter((x) => String(x.id) !== req.params.id);
+      return rest.length === list.length ? null : rest;
+    });
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    res.json({ crossings: out.crossings });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Oversteekpunt verwijderen mislukt.' });
   }
 });
 

@@ -427,15 +427,29 @@ function clearDay(day) {
 }
 
 // Punten van een (concept)versie in de kaart laden zonder nieuwe concepten
-// te genereren; aanroeper zet loadingRoutes.
-function loadDayPoints(day, waypoints) {
+// te genereren; aanroeper zet loadingRoutes. Zit er een opgeslagen pad bij
+// (`saved`), dan tekenen we dat direct — zo blijft de route ook zichtbaar
+// als de routeservice even niet bereikbaar is. Herberekenen gebeurt alleen
+// bij echte wijzigingen.
+function loadDayPoints(day, waypoints, saved = null) {
   clearDay(day);
+  const d = days[day];
   for (const p of waypoints || []) {
-    days[day].points.push(p);
-    addMarker(day, p, days[day].points.length - 1);
+    d.points.push(p);
+    addMarker(day, p, d.points.length - 1);
   }
   relabelMarkers(day);
-  updateRoute(day);
+  if (saved && Array.isArray(saved.path) && saved.path.length > 1) {
+    d.path = saved.path;
+    d.distanceM = Number(saved.distance_m) || 0;
+    d.routeLine.setLatLngs(d.path.map((p) => [p.lat, p.lng]));
+    d.arrows.remove();
+    d.arrows = directionArrows(d.path, DAY_COLORS[day]);
+    updateDayVisibility();
+    updateInfo();
+  } else {
+    updateRoute(day);
+  }
 }
 
 // --- Pauzepunt: ligt altijd op de route, versleepbaar ---
@@ -859,13 +873,13 @@ async function loadSavedRoutes() {
       days[row.day].crossings = row.crossings || [];
       days[row.day].pause = row.pause || null;
       drawPauseMarker(row.day);
-      loadDayPoints(row.day, row.waypoints);
+      loadDayPoints(row.day, row.waypoints, row);
     }
     const draftsRes = await fetch(api('/admin/drafts'), { headers: adminHeaders() });
     if (draftsRes.ok) {
       for (const draft of await draftsRes.json()) {
         draftCounts[draft.day] = draft.count;
-        loadDayPoints(draft.day, draft.waypoints);
+        loadDayPoints(draft.day, draft.waypoints, draft);
       }
     }
   } catch {
@@ -897,13 +911,13 @@ async function revertLastChange() {
   draftCounts[currentDay] = data.count;
   loadingRoutes = true;
   if (data.draft) {
-    loadDayPoints(currentDay, data.draft.waypoints);
+    loadDayPoints(currentDay, data.draft.waypoints, data.draft);
   } else {
     // Geen concepten meer: terug naar de definitieve versie.
     const pubRes = await fetch(api('/routes'));
     const rows = pubRes.ok ? await pubRes.json() : [];
     const row = rows.find((r) => r.day === currentDay);
-    loadDayPoints(currentDay, row ? row.waypoints : []);
+    loadDayPoints(currentDay, row ? row.waypoints : [], row);
   }
   loadingRoutes = false;
   updateDraftStatus();
@@ -1033,29 +1047,28 @@ async function addManualCrossing(clicked) {
   } catch {
     // naam is niet kritisch
   }
-  d.crossings.push({
-    id: `m${Date.now()}`,
-    lat: point.lat,
-    lng: point.lng,
-    name,
-    hidden: false,
-    team: null,
-  });
-  await saveCrossings(currentDay);
-  refreshVrLayer();
-  setVrStatus(`Punt "${name}" toegevoegd. Wijs er via het ruitje een team aan toe.`);
+  const ok = await crossingRequest(currentDay, 'POST', '', { ...point, name });
+  if (ok) setVrStatus(`Punt "${name}" toegevoegd. Wijs er via het ruitje een team aan toe.`);
 }
 
-async function saveCrossings(day) {
-  const res = await fetch(api(`/admin/crossings/${day}`), {
-    method: 'PUT',
-    headers: adminHeaders(true),
-    body: JSON.stringify({ crossings: days[day].crossings }),
+// Eén oversteekpunt toevoegen/bijwerken/verwijderen. De server werkt de
+// lijst atomair bij en stuurt de actuele lijst terug; die nemen we over —
+// zo blijven twee open schermen elkaars wijzigingen niet overschrijven.
+async function crossingRequest(day, method, suffix, body = null) {
+  const res = await fetch(api(`/admin/crossings/${day}${suffix}`), {
+    method,
+    headers: adminHeaders(!!body),
+    body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    setVrStatus('Let op: ' + (err.error || 'kruisingen opslaan mislukt.'));
+    setVrStatus('Let op: ' + (err.error || 'oversteekpunt opslaan mislukt.'));
+    return false;
   }
+  const data = await res.json().catch(() => null);
+  if (data && Array.isArray(data.crossings)) days[day].crossings = data.crossings;
+  refreshVrLayer();
+  return true;
 }
 
 // --- Verkeerslaag op de kaart ---
@@ -1153,12 +1166,9 @@ function openCrossingMenu(c, marker) {
   const sel1 = makeTeamSelect('— geen team —', assigned[0]);
   const sel2 = makeTeamSelect('— geen tweede team —', assigned[1]);
   const onTeamsChanged = async () => {
-    const ids = [sel1.value, sel2.value].filter(Boolean).map(Number);
-    c.teams = [...new Set(ids)];
-    c.team = c.teams[0] ?? null; // oudere lezers blijven werken
-    await saveCrossings(currentDay);
+    const ids = [...new Set([sel1.value, sel2.value].filter(Boolean).map(Number))];
     map.closePopup();
-    refreshVrLayer();
+    await crossingRequest(currentDay, 'PUT', `/${encodeURIComponent(c.id)}`, { teams: ids });
   };
   sel1.addEventListener('change', onTeamsChanged);
   sel2.addEventListener('change', onTeamsChanged);
@@ -1174,11 +1184,8 @@ function openCrossingMenu(c, marker) {
 
   div.appendChild(
     menuButton('Verwijder dit punt', async () => {
-      const d = days[currentDay];
-      d.crossings = d.crossings.filter((x) => x !== c);
-      await saveCrossings(currentDay);
       map.closePopup();
-      refreshVrLayer();
+      await crossingRequest(currentDay, 'DELETE', `/${encodeURIComponent(c.id)}`);
     })
   );
 
