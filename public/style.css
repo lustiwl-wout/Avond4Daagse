@@ -106,7 +106,6 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .day-tab.active, .mode-tab.active { color: #fff; border-color: transparent; }
 .mode-tab.active { background: var(--brand); }
-.day-tab.active[data-day="all"] { background: var(--brand); }
 .day-tab.active[data-day="1"] { background: #dc2626; }
 .day-tab.active[data-day="2"] { background: #2563eb; }
 .day-tab.active[data-day="3"] { background: #16a34a; }

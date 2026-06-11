@@ -4,7 +4,7 @@
 const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
 
 let map;
-let selectedDay = 'all';
+let selectedDay = 1;
 let startFinish = null;
 let sponsorOpen = false;
 let sponsorPlacing = false;
@@ -130,24 +130,20 @@ function renderDistanceList() {
 }
 
 function applySelection() {
-  const showAll = selectedDay === 'all';
-  let union = null;
   for (let day = 1; day <= 4; day++) {
     const r = routes[day];
     if (!r) continue;
-    const visible = showAll || Number(selectedDay) === day;
-    if (visible) {
+    if (day === selectedDay) {
       r.line.addTo(map);
       if (r.pauseMarker) r.pauseMarker.addTo(map);
       r.sponsorMarkers.forEach((m) => m.addTo(map));
-      union = union ? union.extend(r.bounds) : L.latLngBounds(r.bounds.getSouthWest(), r.bounds.getNorthEast());
+      map.fitBounds(r.bounds.pad(0.07));
     } else {
       r.line.remove();
       if (r.pauseMarker) r.pauseMarker.remove();
       r.sponsorMarkers.forEach((m) => m.remove());
     }
   }
-  if (union) map.fitBounds(union.pad(0.07));
 }
 
 // --- Klikken op de kaart: sponsoractie plannen of Street View bekijken ---
@@ -264,7 +260,7 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
   tab.addEventListener('click', () => {
     document.querySelector('.day-tab.active').classList.remove('active');
     tab.classList.add('active');
-    selectedDay = tab.dataset.day;
+    selectedDay = Number(tab.dataset.day);
     applySelection();
   });
 });
