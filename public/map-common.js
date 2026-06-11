@@ -205,19 +205,9 @@ function directionArrows(path, color, spacingM) {
   return group;
 }
 
-// Kop van de stoet (live gedeeld door de begeleider voorop).
-function stoetIcon() {
-  return htmlIcon('<div class="m-stoet"><span></span></div>', [30, 30], [15, 15]);
-}
-
 // Pauzepunt: koffiekopje-achtig 'P'-symbool.
 function pauseIcon() {
   return htmlIcon('<div class="m-dot m-pause">P</div>', [26, 26], [13, 13]);
-}
-
-// Sponsoractie: ster.
-function starIcon() {
-  return htmlIcon('<div class="m-star">★</div>', [26, 26], [13, 13]);
 }
 
 function openMapMenu(map, latlng, contentDiv) {
@@ -257,7 +247,9 @@ async function openStreetView(lat, lng) {
   }
   if (!svOverlay) {
     svOverlay = document.createElement('div');
-    svOverlay.className = 'sv-overlay';
+    // Verborgen aanmaken: de overlay komt pas in beeld als er echt een
+    // panorama is — anders staar je naar een zwart scherm.
+    svOverlay.className = 'sv-overlay hidden';
     svOverlay.innerHTML =
       '<button class="sv-close" type="button">Sluit Street View</button><div class="sv-pano"></div>';
     document.body.appendChild(svOverlay);
@@ -298,6 +290,8 @@ async function openStreetView(lat, lng) {
     }
   }
   if (!pano) {
+    // Terug naar de kaart — geen lege (zwarte) overlay laten staan.
+    svOverlay.classList.add('hidden');
     alert('Op dit punt is geen Street View-beeld beschikbaar.');
     return;
   }

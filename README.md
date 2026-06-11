@@ -1,6 +1,6 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. De platformbeheerder maakt op het hoofddomein onder `/admin` (master-wachtwoord) avondvierdaagsen aan; elke organisatie krijgt een eigen webadres, een eigen beheerwachtwoord en: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, verkeersregelaarsplanning met printversie, en sponsoracties. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
+Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. De platformbeheerder maakt op het hoofddomein onder `/admin` (master-wachtwoord) avondvierdaagsen aan; elke organisatie krijgt een eigen webadres, een eigen beheerwachtwoord en: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, en verkeersregelaarsplanning met printversie. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
 
 Bestaat de installatie al langer met één organisatie, dan migreert de bestaande data bij het opstarten automatisch naar het event `syncope`; het oude `ADMIN_PASSWORD` blijft daar werken.
 
@@ -10,9 +10,9 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 |---|---|---|
 | `/` | Iedereen | Landingspagina met de lijst van avondvierdaagsen |
 | `/admin` (hoofddomein) | Platformbeheerder (master-wachtwoord) | Avondvierdaagsen aanmaken en overzien |
-| `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View, sponsoractie aanmelden. Mobiel-eerst. |
+| `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
 | `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
-| `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams, loopdagen en sponsoracties beheren |
+| `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
 | `/<naam>/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
 ## Routes beheren (`/admin`)
@@ -23,15 +23,8 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
 - **"Maak route dag X definitief"** publiceert de route voor bezoekers, ruimt alle tussenversies op en **vergrendelt de dag**: route, pauzepunt en tussenpunten zijn dan niet meer te bewerken. Wil je toch iets aanpassen, zet de dag dan eerst terug naar concept (knop in de zijbalk) — bezoekers blijven de definitieve versie zien totdat je opnieuw publiceert. De verkeersmodus (oversteekpunten en teams) blijft op een definitieve dag gewoon werken.
-- **Pauzepunt**: markeer per dag waar de stoet pauze houdt (knop "Pauzepunt plaatsen", daarna klikken op de route; versleepbaar en blijft altijd op de route). Zichtbaar voor bezoekers, verkeersregelaars en op de printversie.
-
-## Sponsoracties (promotie vóór het evenement)
-
-- Stel in de admin (Sponsoracties & evenement) de **eerste loopdag** in. Tot die datum staat op de bezoekerspagina de knop "Plan jouw sponsoractie".
-- Bezoekers kiezen een plek op de route en laten voornaam, achternaam, e-mail, telefoon en hun actie achter. De plek verschijnt als ster op de kaart (publiek alleen de actie, geen persoonsgegevens).
-- Vanaf de eerste loopdag verdwijnt de aanmeldoptie automatisch; de sterren blijven zichtbaar.
-- De admin ziet alle aanmeldingen met contactgegevens en kan ze verwijderen.
 - **Vastlegmodus (🎯)**: leg de route vast terwijl je hem zelf loopt — start de GPS op je telefoon en tik bij elke afslag op "Leg punt vast op mijn locatie". De route wordt direct wandelend doorgerekend en punten blijven aanklikbaar en versleepbaar.
+- **Pauzepunt**: markeer per dag waar de stoet pauze houdt (knop "Pauzepunt plaatsen", daarna klikken op de route; versleepbaar en blijft altijd op de route). Zichtbaar voor bezoekers, verkeersregelaars en op de printversie.
 
 ## Verkeersregelaars
 
@@ -54,7 +47,6 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
 - **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, de afstand tot de pauze en je verwachte finishtijd; het gelopen deel van de route vervaagt op de kaart.
 - **Weer per loopdag** (Open-Meteo, zonder key) in de afstandenlijst.
-- **Live stoetvolger**: de begeleider voorop start "stoet delen" in de admin (verkeersmodus); bezoekers en verkeersregelaars zien live een pulserende stip waar de kop van de stoet is. De positie blijft alleen in het servergeheugen en verdwijnt 3 minuten na het laatste signaal.
 
 ## Lokaal draaien
 

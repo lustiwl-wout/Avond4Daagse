@@ -15,8 +15,6 @@ let editMode = 'route'; // 'route' | 'rec' | 'vr'
 let pausePlacing = false;
 let overviewMode = false;
 let schedule = null; // per dag {date, time}
-let sponsors = [];
-let sponsorLayers = [];
 let loggedIn = false;
 const PWD_KEY = `a4d-admin-password-${SLUG}`;
 let password = sessionStorage.getItem(PWD_KEY) || '';
@@ -193,7 +191,7 @@ async function tryLogin(pwd) {
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('editor').classList.remove('hidden');
       await ensureStartFinish();
-      await Promise.all([loadSavedRoutes(), loadTeams(), loadSponsors()]);
+      await Promise.all([loadSavedRoutes(), loadTeams()]);
       renderTeams();
       initSettingsInputs();
       initEventInput();
@@ -659,72 +657,6 @@ function initEventInput() {
   }
 }
 
-async function loadSponsors() {
-  try {
-    const res = await fetch(api('/admin/sponsors'), { headers: adminHeaders() });
-    if (res.ok) sponsors = await res.json();
-  } catch {
-    sponsors = [];
-  }
-  renderSponsors();
-}
-
-function renderSponsors() {
-  sponsorLayers.forEach((l) => l.remove());
-  sponsorLayers = [];
-  const list = document.getElementById('sponsor-list');
-  list.innerHTML = '';
-  if (sponsors.length === 0) {
-    list.innerHTML = '<li class="hint">Nog geen aanmeldingen.</li>';
-    return;
-  }
-  for (const s of sponsors) {
-    const marker = L.marker([s.lat, s.lng], {
-      icon: starIcon(),
-      zIndexOffset: 700,
-      title: `Sponsoractie dag ${s.day}: ${s.action}`,
-    }).addTo(map);
-    marker.bindPopup(
-      `<div class="point-menu"><strong>Sponsoractie (dag ${s.day})</strong>` +
-        `<span>${escapeHtml(s.action)}</span>` +
-        `<span>${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)}<br>${escapeHtml(s.email)} · ${escapeHtml(s.phone)}</span></div>`
-    );
-    sponsorLayers.push(marker);
-
-    const li = document.createElement('li');
-    const label = document.createElement('span');
-    label.innerHTML = `<strong>Dag ${s.day}:</strong> ${escapeHtml(s.action)}<br>
-      <span class="route-meta">${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)} · ${escapeHtml(s.email)} · ${escapeHtml(s.phone)}</span>`;
-    li.appendChild(label);
-    const controls = document.createElement('span');
-    const showBtn = document.createElement('button');
-    showBtn.textContent = 'Toon';
-    showBtn.addEventListener('click', () => {
-      map.setView([s.lat, s.lng], 17);
-      marker.openPopup();
-    });
-    controls.appendChild(showBtn);
-    const delBtn = document.createElement('button');
-    delBtn.textContent = '✕';
-    delBtn.title = 'Aanmelding verwijderen';
-    delBtn.addEventListener('click', async () => {
-      if (!confirm('Deze sponsoraanmelding verwijderen?')) return;
-      await fetch(api(`/admin/sponsors/${s.id}`), { method: 'DELETE', headers: adminHeaders() });
-      sponsors = sponsors.filter((x) => x.id !== s.id);
-      renderSponsors();
-    });
-    controls.appendChild(delBtn);
-    li.appendChild(controls);
-    list.appendChild(li);
-  }
-}
-
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = String(s);
-  return div.innerHTML;
-}
-
 // --- UI: dagen en modus ---
 function updateDayLabels() {
   document.getElementById('save-btn').textContent = `Maak route dag ${currentDay} definitief`;
@@ -734,7 +666,6 @@ function updateDayLabels() {
   pausePlacing = false;
   updatePauseBtn();
   updateMoveTargets();
-  updateStoetBtn();
   updateDraftStatus();
 }
 
@@ -1340,102 +1271,6 @@ function openCrossingMenu(c, marker) {
 
   openMapMenu(map, marker.getLatLng(), div);
 }
-
-// --- Live stoetvolger: eigen GPS-positie delen als kop van de stoet ---
-let stoetWatchId = null;
-let stoetDay = null;
-let stoetLastSent = 0;
-let stoetWakeLock = null;
-
-// Browsers pauzeren GPS zodra het scherm vergrendelt; houd het scherm
-// daarom wakker zolang het delen aanstaat (waar de browser dat kan).
-async function stoetKeepAwake(on) {
-  try {
-    if (on && 'wakeLock' in navigator && !stoetWakeLock) {
-      stoetWakeLock = await navigator.wakeLock.request('screen');
-      stoetWakeLock.addEventListener('release', () => {
-        stoetWakeLock = null;
-      });
-    } else if (!on && stoetWakeLock) {
-      await stoetWakeLock.release();
-      stoetWakeLock = null;
-    }
-  } catch {
-    // zonder wake lock werkt het delen ook — alleen niet met scherm uit
-  }
-}
-
-// Komt de pagina terug in beeld (telefoon ontgrendeld), pak de wake lock
-// dan opnieuw — die wordt door de browser losgelaten bij vergrendelen.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && stoetWatchId !== null) stoetKeepAwake(true);
-});
-
-function setStoetStatus(text) {
-  document.getElementById('stoet-status').textContent = text;
-}
-
-function updateStoetBtn() {
-  document.getElementById('stoet-btn').textContent =
-    stoetWatchId === null
-      ? `Start stoet delen (dag ${currentDay})`
-      : `Stop stoet delen (dag ${stoetDay})`;
-}
-
-async function stopStoet() {
-  if (stoetWatchId !== null) navigator.geolocation.clearWatch(stoetWatchId);
-  stoetWatchId = null;
-  stoetKeepAwake(false);
-  setStoetStatus('');
-  if (stoetDay !== null) {
-    await fetch(api(`/admin/stoet/${stoetDay}`), { method: 'DELETE', headers: adminHeaders() }).catch(
-      () => {}
-    );
-    stoetDay = null;
-  }
-  updateStoetBtn();
-}
-
-document.getElementById('stoet-btn').addEventListener('click', () => {
-  if (stoetWatchId !== null) {
-    stopStoet();
-    return;
-  }
-  if (!navigator.geolocation) {
-    setStoetStatus('Let op: GPS wordt niet ondersteund door deze browser.');
-    return;
-  }
-  stoetDay = currentDay;
-  setStoetStatus('GPS zoeken…');
-  stoetKeepAwake(true);
-  stoetWatchId = navigator.geolocation.watchPosition(
-    async (position) => {
-      // Hooguit elke 10 seconden versturen — vaker heeft geen zin.
-      if (Date.now() - stoetLastSent < 10000) return;
-      stoetLastSent = Date.now();
-      const res = await fetch(api(`/admin/stoet/${stoetDay}`), {
-        method: 'PUT',
-        headers: adminHeaders(true),
-        body: JSON.stringify({ lat: position.coords.latitude, lng: position.coords.longitude }),
-      }).catch(() => null);
-      setStoetStatus(
-        res && res.ok
-          ? `Stoetpositie wordt gedeeld (dag ${stoetDay}). Houd het scherm aan en de pagina open — bij een vergrendeld scherm stopt de GPS.`
-          : 'Let op: positie versturen mislukt, opnieuw aan het proberen…'
-      );
-    },
-    (err) => {
-      setStoetStatus(
-        err.code === 1
-          ? 'Let op: geen toestemming voor locatie. Sta locatietoegang toe in je browser.'
-          : 'Let op: GPS-fout, opnieuw aan het proberen…'
-      );
-      if (err.code === 1) stopStoet();
-    },
-    { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
-  );
-  updateStoetBtn();
-});
 
 // --- Teams beheren ---
 function renderTeams() {

@@ -7,9 +7,7 @@ let map;
 let selectedDay = 1;
 let schedule = null; // per dag {date, time}
 let startFinish = null;
-let sponsorOpen = false;
-let sponsorPlacing = false;
-const routes = {}; // day -> { line, bounds, distance_m, path, pauseMarker, sponsorMarkers }
+const routes = {}; // day -> { line, bounds, distance_m, path, pauseMarker }
 
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
@@ -20,8 +18,6 @@ async function init() {
   if (brandSub && config.orgName) brandSub.textContent = '' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
-  sponsorOpen = !!config.sponsorOpen;
-  if (sponsorOpen) document.getElementById('sponsor-section').classList.remove('hidden');
   showAnnouncement(config.announcement);
   schedule = config.schedule || null;
   // Standaard de eerstvolgende loopdag tonen.
@@ -54,7 +50,6 @@ async function init() {
 
   await loadRoutes();
   loadWeather();
-  pollStoet();
 }
 
 async function loadRoutes() {
@@ -78,7 +73,7 @@ async function loadRoutes() {
       color: DAY_COLORS[row.day],
       weight: 5,
       opacity: 0.85,
-      // Klikken op de lijn gaan naar de kaart (Street View / sponsorplek).
+      // Klikken op de lijn gaan naar de kaart (Street View).
       interactive: false,
     }).addTo(map);
     const pauseMarker = row.pause
@@ -97,39 +92,11 @@ async function loadRoutes() {
       total,
       pauseAlong: row.pause ? nearestOnPath(path, row.pause).along : null,
       pauseMarker,
-      sponsorMarkers: [],
     };
-  }
-
-  // Aangemelde sponsoracties als sterren op de kaart (alleen plek + actie).
-  try {
-    const sres = await fetch(api('/sponsors'));
-    if (sres.ok) {
-      for (const s of await sres.json()) {
-        if (!routes[s.day]) continue;
-        const marker = L.marker([s.lat, s.lng], {
-          icon: starIcon(),
-          zIndexOffset: 700,
-          title: 'Sponsoractie',
-        });
-        marker.bindPopup(
-          `<div class="point-menu"><strong>Sponsoractie (dag ${s.day})</strong><span>${escapeHtml(s.action)}</span></div>`
-        );
-        routes[s.day].sponsorMarkers.push(marker);
-      }
-    }
-  } catch {
-    // sponsoracties zijn optioneel
   }
 
   renderDistanceList();
   applySelection();
-}
-
-function escapeHtml(s) {
-  const div = document.createElement('div');
-  div.textContent = String(s);
-  return div.innerHTML;
 }
 
 // Mededeling van de organisatie als balk onder de header.
@@ -234,18 +201,16 @@ function applySelection() {
       r.line.addTo(map);
       r.arrows.addTo(map);
       if (r.pauseMarker) r.pauseMarker.addTo(map);
-      r.sponsorMarkers.forEach((m) => m.addTo(map));
       map.fitBounds(r.bounds.pad(0.07));
     } else {
       r.line.remove();
       r.arrows.remove();
       if (r.pauseMarker) r.pauseMarker.remove();
-      r.sponsorMarkers.forEach((m) => m.remove());
     }
   }
 }
 
-// --- Klikken op de kaart: sponsoractie plannen of Street View bekijken ---
+// --- Klikken op de kaart: Street View bekijken ---
 function nearestVisibleRoute(point) {
   let best = null;
   for (let day = 1; day <= 4; day++) {
@@ -262,15 +227,6 @@ function onMapClick(e) {
   if (window.__gpsSimActive) return;
   const point = { lat: e.latlng.lat, lng: e.latlng.lng };
   const hit = nearestVisibleRoute(point);
-  if (sponsorPlacing) {
-    if (!hit) {
-      document.getElementById('sponsor-status').textContent =
-        'Klik op (of vlak naast) de route op de plek waar je iets wilt doen.';
-      return;
-    }
-    openSponsorForm(hit);
-    return;
-  }
   if (!hit) return;
   const div = document.createElement('div');
   div.className = 'point-menu';
@@ -283,77 +239,6 @@ function onMapClick(e) {
       openStreetView(hit.lat, hit.lng);
     })
   );
-  openMapMenu(map, [hit.lat, hit.lng], div);
-}
-
-// --- Sponsoractie aanmelden (alleen vóór de eerste loopdag) ---
-const sponsorBtn = document.getElementById('sponsor-btn');
-sponsorBtn.addEventListener('click', () => {
-  sponsorPlacing = !sponsorPlacing;
-  sponsorBtn.textContent = sponsorPlacing ? 'Annuleer' : 'Plan jouw sponsoractie';
-  document.getElementById('sponsor-status').textContent = sponsorPlacing
-    ? 'Klik op de kaart op de plek langs de route waar je jouw actie wilt doen.'
-    : '';
-});
-
-function openSponsorForm(hit) {
-  const div = document.createElement('div');
-  div.className = 'point-menu';
-  div.innerHTML = `<strong>Sponsoractie aanmelden (dag ${hit.day})</strong>`;
-  const fields = [
-    ['firstName', 'Voornaam'],
-    ['lastName', 'Achternaam'],
-    ['email', 'E-mailadres'],
-    ['phone', 'Telefoonnummer'],
-  ];
-  const inputs = {};
-  for (const [key, label] of fields) {
-    const input = document.createElement('input');
-    input.type = key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text';
-    input.placeholder = label;
-    inputs[key] = input;
-    div.appendChild(input);
-  }
-  const action = document.createElement('textarea');
-  action.placeholder = 'Wat wil je hier doen? (bijv. ranja, fruit, muziek)';
-  div.appendChild(action);
-  const status = document.createElement('span');
-  status.className = 'hint';
-  const submit = menuButton('Aanmelden', async () => {
-    status.textContent = 'Versturen…';
-    const res = await fetch(api('/sponsors'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        day: hit.day,
-        lat: hit.lat,
-        lng: hit.lng,
-        firstName: inputs.firstName.value,
-        lastName: inputs.lastName.value,
-        email: inputs.email.value,
-        phone: inputs.phone.value,
-        action: action.value,
-      }),
-    });
-    if (res.ok) {
-      map.closePopup();
-      sponsorPlacing = false;
-      sponsorBtn.textContent = 'Plan jouw sponsoractie';
-      document.getElementById('sponsor-status').textContent =
-        'Dank je wel! Je actie staat op de kaart en we nemen contact met je op.';
-      const marker = L.marker([hit.lat, hit.lng], { icon: starIcon(), zIndexOffset: 700 }).addTo(map);
-      marker.bindPopup(
-        `<div class="point-menu"><strong>Sponsoractie (dag ${hit.day})</strong><span>${escapeHtml(action.value)}</span></div>`
-      );
-      routes[hit.day].sponsorMarkers.push(marker);
-    } else {
-      const err = await res.json().catch(() => ({}));
-      status.textContent = err.error || 'Aanmelden mislukt — probeer het opnieuw.';
-    }
-  });
-  submit.className = 'primary';
-  div.appendChild(submit);
-  div.appendChild(status);
   openMapMenu(map, [hit.lat, hit.lng], div);
 }
 
@@ -498,46 +383,11 @@ function selectDayTab(day) {
   progressAlong = null;
   paceSamples = [];
   if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
-  if (stoetMarker) {
-    stoetMarker.remove();
-    stoetMarker = null;
-  }
-  if (map) pollStoet();
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
   tab.addEventListener('click', () => selectDayTab(tab.dataset.day));
 });
-
-// --- Live stoetvolger: positie van de kop van de stoet (elke 15 s) ---
-let stoetMarker = null;
-
-async function pollStoet() {
-  if (!map) return;
-  let pos = null;
-  try {
-    const res = await fetch(api(`/stoet/${selectedDay}`));
-    if (res.ok) pos = await res.json();
-  } catch {
-    // volgende poging over 15 s
-  }
-  if (!pos) {
-    if (stoetMarker) stoetMarker.remove();
-    stoetMarker = null;
-    return;
-  }
-  if (!stoetMarker) {
-    stoetMarker = L.marker([pos.lat, pos.lng], {
-      icon: stoetIcon(),
-      zIndexOffset: 1100,
-      title: 'Kop van de stoet (live)',
-    }).addTo(map);
-    stoetMarker.bindPopup('<div class="point-menu"><strong>Kop van de stoet</strong><span>Live gedeeld door de organisatie.</span></div>');
-  }
-  stoetMarker.setLatLng([pos.lat, pos.lng]);
-}
-
-setInterval(pollStoet, 15000);
 
 const gps = setupGps(() => map, updateProgress);
 init();

@@ -51,7 +51,6 @@ async function init() {
 
   await loadData();
   refreshView();
-  pollStoet();
 }
 
 async function loadData() {
@@ -109,11 +108,6 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
     tab.classList.add('active');
     selectedDay = Number(tab.dataset.day);
     refreshView();
-    if (stoetMarker) {
-      stoetMarker.remove();
-      stoetMarker = null;
-    }
-    pollStoet();
   });
 });
 
@@ -267,34 +261,5 @@ function fmtMoment(min) {
   }
   return `+${Math.round(min)} min`;
 }
-
-// --- Live stoetvolger: positie van de kop van de stoet (elke 15 s) ---
-let stoetMarker = null;
-
-async function pollStoet() {
-  if (!map) return;
-  let pos = null;
-  try {
-    const res = await fetch(api(`/stoet/${selectedDay}`));
-    if (res.ok) pos = await res.json();
-  } catch {
-    // volgende poging over 15 s
-  }
-  if (!pos) {
-    if (stoetMarker) stoetMarker.remove();
-    stoetMarker = null;
-    return;
-  }
-  if (!stoetMarker) {
-    stoetMarker = L.marker([pos.lat, pos.lng], {
-      icon: stoetIcon(),
-      zIndexOffset: 1100,
-      title: 'Kop van de stoet (live)',
-    }).addTo(map);
-  }
-  stoetMarker.setLatLng([pos.lat, pos.lng]);
-}
-
-setInterval(pollStoet, 15000);
 
 init();

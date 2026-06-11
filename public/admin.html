@@ -129,9 +129,8 @@
           <section id="move-section">
             <h2>Route verplaatsen</h2>
             <p class="hint">
-              Verplaatst alles van deze dag — route, concepten, pauzepunt,
-              oversteekpunten en sponsoracties — naar de gekozen
-              dag. Heeft die dag al een route, dan worden de dagen omgewisseld.
+              Verplaatst alles van deze dag — route, concepten, pauzepunt
+              en oversteekpunten — naar de gekozen dag. Heeft die dag al een route, dan worden de dagen omgewisseld.
               De datums van de loopdagen blijven staan.
             </p>
             <select id="move-target"></select>
@@ -208,21 +207,6 @@
             <p id="vr-status" class="hint"></p>
           </section>
 
-          <section>
-            <h2>Live stoetvolger</h2>
-            <p class="hint">
-              Loop je zelf voorop de stoet? Start het delen — bezoekers en
-              verkeersregelaars zien dan live een stip waar de kop van de
-              stoet is. Stopt het delen (of valt je verbinding 3 minuten
-              weg), dan verdwijnt de stip vanzelf.
-              <strong>Belangrijk:</strong> houd de telefoon ontgrendeld met
-              deze pagina in beeld — de site houdt het scherm automatisch
-              wakker, maar met een vergrendeld scherm (broekzak) pauzeert
-              de browser de GPS.
-            </p>
-            <button id="stoet-btn" class="primary">Start stoet delen (dag 1)</button>
-            <p id="stoet-status" class="hint"></p>
-          </section>
         </div>
 
         <section>
@@ -230,19 +214,16 @@
           <p class="hint">Klik op een punt op de kaart (vlag, tussenpunt, ruitje of pauzepunt) en kies "Bekijk in Street View".</p>
         </section>
 
-        <details id="sponsor-admin">
-          <summary>Loopdagen &amp; sponsoracties</summary>
+        <details id="schedule-admin">
+          <summary>Loopdagen</summary>
           <label class="setting-row">Dag 1 <span><input type="date" id="set-date-1" /><input type="time" id="set-time-1" /></span></label>
           <label class="setting-row">Dag 2 <span><input type="date" id="set-date-2" /><input type="time" id="set-time-2" /></span></label>
           <label class="setting-row">Dag 3 <span><input type="date" id="set-date-3" /><input type="time" id="set-time-3" /></span></label>
           <label class="setting-row">Dag 4 <span><input type="date" id="set-date-4" /><input type="time" id="set-time-4" /></span></label>
           <p class="hint">
-            De site toont bezoekers standaard de eerstvolgende loopdag. Tot de
-            vroegste datum kunnen bezoekers een plek kiezen voor een
-            sponsoractie en hun gegevens achterlaten; daarna verdwijnt die
-            optie automatisch.
+            De site toont bezoekers standaard de eerstvolgende loopdag; met een
+            starttijd worden de tijden per post kloktijden.
           </p>
-          <ul id="sponsor-list"><li class="hint">Nog geen aanmeldingen.</li></ul>
         </details>
 
         <details id="announce-admin">

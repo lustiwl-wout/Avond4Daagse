@@ -12,7 +12,7 @@ app.set('trust proxy', 1);
 
 // Eén installatie host meerdere avondvierdaagsen ("events"): elke
 // organisatie heeft een eigen pad (/syncope, /obs-noord, …) met eigen
-// routes, teams, sponsors, instellingen en beheerwachtwoord.
+// routes, teams, instellingen en beheerwachtwoord.
 // Het master-wachtwoord (omgevingsvariabele ADMIN_PASSWORD) werkt op
 // elk event — handig voor de platformbeheerder.
 
@@ -202,21 +202,6 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS sponsors (
-      id SERIAL PRIMARY KEY,
-      event_id INTEGER NOT NULL,
-      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
-      lat DOUBLE PRECISION NOT NULL,
-      lng DOUBLE PRECISION NOT NULL,
-      first_name TEXT NOT NULL,
-      last_name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      action TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
   await migrateToEvents();
   // Pas ná de migratie: oudere installaties hebben de event_id-kolom dan pas.
   await pool.query(
@@ -228,7 +213,7 @@ async function initDb() {
 // (zonder event_id) wordt het event "syncope"; het bestaande
 // ADMIN_PASSWORD blijft daar werken als eigen wachtwoord.
 async function migrateToEvents() {
-  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts']) {
     await pool.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS event_id INTEGER`);
   }
 
@@ -237,7 +222,7 @@ async function migrateToEvents() {
 
   // Data zonder event in welke tabel dan ook = oude één-organisatie-installatie.
   let hasOrphans = false;
-  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts']) {
     const { rows } = await pool.query(`SELECT 1 FROM ${table} WHERE event_id IS NULL LIMIT 1`);
     if (rows.length > 0) {
       hasOrphans = true;
@@ -257,7 +242,7 @@ async function migrateToEvents() {
     console.log('Bestaande data gemigreerd naar event "syncope".');
   }
   if (defaultEventId !== null) {
-    for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+    for (const table of ['day_routes', 'settings', 'teams', 'route_drafts']) {
       await pool.query(`UPDATE ${table} SET event_id = $1 WHERE event_id IS NULL`, [defaultEventId]);
     }
   }
@@ -349,7 +334,7 @@ async function setSetting(eventId, key, value) {
   );
 }
 
-// Datum in Nederland (de loopdagen bepalen o.a. of sponsoracties open staan).
+// Datum in Nederland (voor de standaard getoonde loopdag).
 function todayNl() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(new Date());
 }
@@ -362,12 +347,6 @@ function scheduleEntries(eventSetting) {
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function sponsorOpenFor(eventSetting) {
-  const entries = scheduleEntries(eventSetting);
-  if (entries.length > 0) return todayNl() < entries[0].date;
-  if (eventSetting && eventSetting.startDate) return todayNl() < eventSetting.startDate;
-  return false;
-}
 
 function computeDefaultDay(eventSetting) {
   const entries = scheduleEntries(eventSetting);
@@ -725,7 +704,6 @@ eventApi.get('/config', async (req, res) => {
     vrSettings,
     schedule: (eventSetting && eventSetting.days) || null,
     defaultDay: computeDefaultDay(eventSetting),
-    sponsorOpen: sponsorOpenFor(eventSetting),
     announcement: (announcement && announcement.text) || null,
   });
 });
@@ -1087,7 +1065,7 @@ eventApi.delete('/routes/:day', async (req, res) => {
   }
 });
 
-// Route (met concepten, pauzepunt, oversteekpunten en sponsoracties) naar
+// Route (met concepten, pauzepunt en oversteekpunten) naar
 // een andere dag verplaatsen; heeft de doeldag al een route, dan wisselen
 // de dagen om. De loopdag-datums blijven bij hun kalenderdag.
 eventApi.post('/admin/move-route', async (req, res) => {
@@ -1126,10 +1104,6 @@ eventApi.post('/admin/move-route', async (req, res) => {
     }
     await client.query(
       'UPDATE route_drafts SET day = CASE day WHEN $2 THEN $3 ELSE $2 END WHERE event_id = $1 AND day IN ($2, $3)',
-      [req.event.id, from, to]
-    );
-    await client.query(
-      'UPDATE sponsors SET day = CASE day WHEN $2 THEN $3 ELSE $2 END WHERE event_id = $1 AND day IN ($2, $3)',
       [req.event.id, from, to]
     );
     await client.query('COMMIT');
@@ -1267,40 +1241,6 @@ eventApi.delete('/admin/crossings/:day/:id', async (req, res) => {
   }
 });
 
-// --- Live stoetvolger ---
-// De begeleider voorop deelt zijn positie vanuit de admin; bezoekers en
-// verkeersregelaars zien die live op de kaart. Bewust in het geheugen
-// (geen database-schrijflast); ouder dan 3 minuten = niet meer tonen.
-const STOET_MAX_AGE_MS = 3 * 60 * 1000;
-const stoetPositions = new Map(); // `${eventId}:${day}` -> { lat, lng, at }
-
-eventApi.put('/admin/stoet/:day', async (req, res) => {
-  if (!(await requireAdmin(req, res))) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { lat, lng } = req.body || {};
-  if (!isValidLatLng({ lat, lng })) return res.status(400).json({ error: 'Ongeldige positie.' });
-  stoetPositions.set(`${req.event.id}:${day}`, { lat, lng, at: Date.now() });
-  res.status(204).end();
-});
-
-eventApi.delete('/admin/stoet/:day', async (req, res) => {
-  if (!(await requireAdmin(req, res))) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  stoetPositions.delete(`${req.event.id}:${day}`);
-  res.status(204).end();
-});
-
-// Publiek: actuele positie van de kop van de stoet (of null).
-eventApi.get('/stoet/:day', (req, res) => {
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const pos = stoetPositions.get(`${req.event.id}:${day}`);
-  if (!pos || Date.now() - pos.at > STOET_MAX_AGE_MS) return res.json(null);
-  res.json({ lat: pos.lat, lng: pos.lng, ageS: Math.round((Date.now() - pos.at) / 1000) });
-});
-
 // --- Teams ---
 
 const TEAM_COLORS = ['#f97316', '#0ea5e9', '#84cc16', '#e11d48', '#8b5cf6', '#14b8a6', '#a16207', '#64748b'];
@@ -1370,90 +1310,6 @@ eventApi.delete('/admin/teams/:id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Team verwijderen mislukt.' });
-  }
-});
-
-// --- Sponsoracties ---
-
-eventApi.get('/sponsors', async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      'SELECT id, day, lat, lng, action FROM sponsors WHERE event_id = $1 ORDER BY id',
-      [req.event.id]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
-  }
-});
-
-eventApi.post('/sponsors', async (req, res) => {
-  try {
-    const eventSetting = await getSetting(req.event.id, 'event');
-    if (!sponsorOpenFor(eventSetting)) {
-      return res.status(403).json({ error: 'De aanmelding voor sponsoracties is gesloten.' });
-    }
-    const { day, lat, lng, firstName, lastName, email, phone, action } = req.body || {};
-    const dayNum = Number(day);
-    const fields = [firstName, lastName, email, phone, action];
-    if (
-      !Number.isInteger(dayNum) || dayNum < 1 || dayNum > 4 ||
-      !isValidLatLng({ lat, lng }) ||
-      !fields.every((f) => typeof f === 'string' && f.trim().length > 0 && f.length <= 500) ||
-      !/^\S+@\S+\.\S+$/.test(email)
-    ) {
-      return res.status(400).json({ error: 'Vul alle velden in (met een geldig e-mailadres).' });
-    }
-    const { rows } = await pool.query(
-      `INSERT INTO sponsors (event_id, day, lat, lng, first_name, last_name, email, phone, action)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [
-        req.event.id,
-        dayNum,
-        lat,
-        lng,
-        firstName.trim(),
-        lastName.trim(),
-        email.trim(),
-        phone.trim(),
-        action.trim(),
-      ]
-    );
-    res.status(201).json({ id: rows[0].id });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Aanmelden mislukt.' });
-  }
-});
-
-eventApi.get('/admin/sponsors', async (req, res) => {
-  if (!(await requireAdmin(req, res))) return;
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, day, lat, lng, first_name, last_name, email, phone, action, created_at
-       FROM sponsors WHERE event_id = $1 ORDER BY day, id`,
-      [req.event.id]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
-  }
-});
-
-eventApi.delete('/admin/sponsors/:id', async (req, res) => {
-  if (!(await requireAdmin(req, res))) return;
-  try {
-    const { rowCount } = await pool.query('DELETE FROM sponsors WHERE id = $1 AND event_id = $2', [
-      Number(req.params.id),
-      req.event.id,
-    ]);
-    if (rowCount === 0) return res.status(404).json({ error: 'Aanmelding niet gevonden.' });
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Verwijderen mislukt.' });
   }
 });
 
