@@ -235,14 +235,34 @@ async function openStreetView(lat, lng) {
       svOverlay.classList.add('hidden');
     });
   }
-  // Altijd een vers panorama in een zichtbare overlay: hergebruik van het
-  // panorama gaf een zwart eerste beeld en verouderde beelden daarna.
+  // Zoek eerst het dichtstbijzijnde buitenpanorama (tot 150 m): op wandel-
+  // en fietspaden bestaat vaak geen beeld op het punt zelf en bleef het
+  // scherm anders stil zwart.
+  let pano;
+  try {
+    const svc = new google.maps.StreetViewService();
+    const result = await svc.getPanorama({
+      location: { lat, lng },
+      radius: 150,
+      preference: google.maps.StreetViewPreference.NEAREST,
+      sources: [google.maps.StreetViewSource.OUTDOOR],
+    });
+    pano = result.data;
+  } catch {
+    alert('Op deze plek (en binnen 150 meter eromheen) is geen Street View beschikbaar.');
+    return;
+  }
+
+  // Altijd een vers panorama in een zichtbare overlay, met de camera
+  // gericht op het aangeklikte punt.
   svOverlay.classList.remove('hidden');
   const panoDiv = svOverlay.querySelector('.sv-pano');
   panoDiv.innerHTML = '';
+  const panoLoc = pano.location.latLng;
+  const heading = bearingDeg({ lat: panoLoc.lat(), lng: panoLoc.lng() }, { lat, lng });
   svPano = new google.maps.StreetViewPanorama(panoDiv, {
-    position: { lat, lng },
-    pov: { heading: 0, pitch: 0 },
+    pano: pano.location.pano,
+    pov: { heading, pitch: 0 },
   });
 }
 
