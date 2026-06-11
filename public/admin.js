@@ -1085,8 +1085,12 @@ function refreshVrLayer() {
   if (editMode !== 'vr' || overviewMode) return;
 
   const d = days[currentDay];
+  // Nummering volgt de looprichting: sorteren op afstand langs de route.
+  const order = new Map();
+  if (d.path) d.crossings.forEach((c) => order.set(c, alongPath(d.path, c)));
+  const sorted = [...d.crossings].sort((a, b) => (order.get(a) || 0) - (order.get(b) || 0));
   let visibleIndex = 0;
-  for (const c of d.crossings) {
+  for (const c of sorted) {
     if (!c.hidden) visibleIndex++;
     const team = c.team != null ? teamById(c.team) : null;
     const marker = L.marker([c.lat, c.lng], {

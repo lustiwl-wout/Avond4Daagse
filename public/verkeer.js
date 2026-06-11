@@ -58,6 +58,7 @@ async function loadData() {
           }),
           arrows: directionArrows(path, DAY_COLORS[row.day]),
           bounds: boundsOf(path),
+          path,
           crossings: (row.crossings || []).filter((c) => !c.hidden),
           pause: row.pause || null,
         };
@@ -138,8 +139,13 @@ function refreshView() {
 
   const teamFilter = selectedTeam === 'all' ? null : Number(selectedTeam);
 
+  // Nummering volgt de looprichting: sorteren op afstand langs de route.
+  const order = new Map();
+  route.crossings.forEach((c) => order.set(c, nearestOnPath(route.path, c).along));
+  const sortedCrossings = [...route.crossings].sort((a, b) => order.get(a) - order.get(b));
+
   let index = 0;
-  for (const c of route.crossings) {
+  for (const c of sortedCrossings) {
     index++;
     const team = c.team != null ? teamById(c.team) : null;
     const isMine = teamFilter === null || c.team === teamFilter;
