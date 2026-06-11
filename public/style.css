@@ -309,6 +309,15 @@ details > *:not(summary) { margin-top: 0.5rem; }
 
 .m-dimmed { opacity: 0.35; }
 
+.m-vertex {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 3px solid #2ba59a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
 .m-pos {
   width: 18px;
   height: 18px;

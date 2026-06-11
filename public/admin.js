@@ -277,7 +277,7 @@ function removePoint(day, index) {
 function addMarker(day, point, index) {
   const d = days[day];
   const marker = L.marker([point.lat, point.lng], {
-    icon: dotIcon(DAY_COLORS[day]),
+    icon: vertexIcon(DAY_COLORS[day]),
     draggable: true,
     zIndexOffset: 600,
   });
@@ -302,8 +302,10 @@ function addMarker(day, point, index) {
   d.markers.splice(index, 0, marker);
 }
 
+// Tussenpunten zijn tekenhandvatten zonder nummer; alleen het icoon wordt
+// ververst (de volgorde blijft intern bekend voor het invoegmenu).
 function relabelMarkers(day) {
-  days[day].markers.forEach((m, i) => m.setIcon(dotIcon(DAY_COLORS[day], String(i + 1))));
+  days[day].markers.forEach((m) => m.setIcon(vertexIcon(DAY_COLORS[day])));
 }
 
 // Menu bij klik op een tussenpunt: Street View, verwijderen of punt invoegen.

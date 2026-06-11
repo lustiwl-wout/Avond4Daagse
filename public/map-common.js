@@ -48,9 +48,15 @@ function flagIcon() {
   return htmlIcon(svg, [34, 34], [17, 17]);
 }
 
-// Genummerd rond punt (tussenpunten, conflictpunten).
+// Genummerd rond punt (conflictpunten e.d.).
 function dotIcon(color, label = '') {
   return htmlIcon(`<div class="m-dot" style="background:${color}">${label}</div>`, [24, 24], [12, 12]);
+}
+
+// Klein handvat zonder nummer: tussenpunten dienen alleen om de route te
+// tekenen en moeten niet op verkeerspunten lijken.
+function vertexIcon(color) {
+  return htmlIcon(`<div class="m-vertex" style="border-color:${color}"></div>`, [16, 16], [8, 8]);
 }
 
 // Genummerd ruitje (oversteekpunten).
