@@ -496,7 +496,41 @@ function throttledNominatim(url) {
   return call;
 }
 
+// Wegen met naam vlak bij een punt (Overpass/OSM): voor het herkennen van
+// kruisingen ("Kruising A / B") en bruggen. `mainRoad` (van Nominatim)
+// komt vooraan in de volgorde.
+async function nearbyRoads(lat, lng, mainRoad) {
+  const q = `[out:json][timeout:8];way(around:25,${lat},${lng})[highway][name];out tags;`;
+  const resp = await fetch('https://overpass-api.de/api/interpreter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OSM_UA },
+    body: 'data=' + encodeURIComponent(q),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!resp.ok) throw new Error(`Overpass gaf status ${resp.status}`);
+  const data = await resp.json();
+  const names = [];
+  let bridge = null;
+  for (const el of data.elements || []) {
+    const t = el.tags || {};
+    if (!t.name) continue;
+    if (t.bridge && t.bridge !== 'no') {
+      if (!bridge) bridge = t.name;
+      continue; // een brug óver/onder de route is geen kruising
+    }
+    if (t.tunnel && t.tunnel !== 'no') continue;
+    if (!names.includes(t.name)) names.push(t.name);
+  }
+  if (mainRoad && names.includes(mainRoad)) {
+    names.splice(names.indexOf(mainRoad), 1);
+    names.unshift(mainRoad);
+  }
+  return { names, bridge };
+}
+
 // Adres bij een punt (publiek, voor de printversie en puntnamen) — gecachet.
+// Zo precies mogelijk: liefst de kruising, anders de brug, anders de straat
+// ter hoogte van het dichtstbijzijnde huisnummer.
 app.get('/api/address', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
@@ -510,17 +544,27 @@ app.get('/api/address', async (req, res) => {
       `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=nl`
     );
     const a = data.address || {};
-    const road = a.road || a.pedestrian || a.cycleway || a.footway || '';
+    const mainRoad = a.road || a.pedestrian || a.cycleway || a.footway || '';
+
+    // Preciezere plek via Overpass; valt bij storing stil terug op Nominatim.
+    let spot = '';
+    try {
+      const { names, bridge } = await nearbyRoads(lat, lng, mainRoad);
+      if (names.length >= 2) spot = `Kruising ${names.slice(0, 2).join(' / ')}`;
+      else if (bridge) spot = /brug/i.test(bridge) ? bridge : `${bridge} (brug)`;
+    } catch (err) {
+      console.error('Overpass-opzoeking mislukt:', err.message);
+    }
+    if (!spot) {
+      spot = a.house_number ? `${mainRoad} t.h.v. nr. ${a.house_number}` : mainRoad;
+    }
+
     const address =
-      [
-        [road, a.house_number].filter(Boolean).join(' '),
-        a.suburb || a.neighbourhood || a.quarter,
-        a.city || a.town || a.village,
-      ]
+      [spot, a.suburb || a.neighbourhood || a.quarter, a.city || a.town || a.village]
         .filter(Boolean)
         .join(', ') ||
       (data.display_name || 'Onbekend adres').split(',').slice(0, 3).join(',');
-    const out = { address, road };
+    const out = { address, road: spot || mainRoad };
     geoCache.set(key, out);
     res.json(out);
   } catch (err) {
