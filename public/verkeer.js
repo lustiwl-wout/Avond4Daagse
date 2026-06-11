@@ -1,5 +1,5 @@
 // Verkeersregelaarspagina (/verkeer): kies je team, zie je posten en je
-// tijdschema, volg jezelf met GPS en navigeer naar een post via Google Maps.
+// tijdschema, en navigeer naar een post via Google Maps.
 // Geen wachtwoord nodig. Kaart via OpenStreetMap/Leaflet; Street View en
 // navigatie via Google.
 const NL_CENTER = { lat: 52.2, lng: 5.3 };
@@ -191,7 +191,7 @@ function openCrossingInfo(c, assigned, nr) {
   nav.target = '_blank';
   nav.rel = 'noopener';
   nav.className = 'nav-link';
-  nav.textContent = 'Navigeer hierheen (Google Maps)';
+  nav.textContent = 'Navigeer hierheen';
   div.appendChild(nav);
   openMapMenu(map, [c.lat, c.lng], div);
 }
@@ -228,7 +228,7 @@ function renderSchedule(teamFilter) {
     nav.target = '_blank';
     nav.rel = 'noopener';
     nav.className = 'nav-link';
-    nav.textContent = 'Navigeer (Google Maps)';
+    nav.textContent = 'Navigeer';
     li.appendChild(nav);
     list.appendChild(li);
   });
@@ -246,5 +246,4 @@ function fmtMoment(min) {
   return `+${Math.round(min)} min`;
 }
 
-setupGps(() => map);
 init();

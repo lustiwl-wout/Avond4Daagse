@@ -11,7 +11,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 | `/` | Iedereen | Landingspagina met de lijst van avondvierdaagsen |
 | `/admin` (hoofddomein) | Platformbeheerder (master-wachtwoord) | Avondvierdaagsen aanmaken en overzien |
 | `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View, sponsoractie aanmelden. Mobiel-eerst. |
-| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps |
+| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
 | `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams, loopdagen en sponsoracties beheren |
 | `/<naam>/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
@@ -43,7 +43,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **De verkeersleider wijst teams zelf toe**: klik op een ruitje en kies het team (of twee teams) voor dat punt. De tijden per post — wanneer de stoet aankomt (positie langs de route ÷ wandeltempo) en wanneer de hele stoet voorbij is (+ passeertijd) — staan op `/verkeer` en de printversie, als kloktijd zodra de starttijd van de dag is ingevuld.
 - **Navigeren** naar een post doen de verkeersregelaars via de Google Maps-knop per post op `/verkeer`; onderweg letten ze zelf op de stoet.
 
-**Voor de verkeersregelaars zelf** (`/verkeer`, geen wachtwoord): kies je team → je ziet je posten met tijdschema (wanneer komt de stoet, wanneer mag je weg), je kunt per post met één klik navigeren via Google Maps, en onderweg de GPS aanzetten.
+**Voor de verkeersregelaars zelf** (`/verkeer`, geen wachtwoord): kies je team → je ziet je posten met tijdschema (wanneer komt de stoet, wanneer mag je weg) en je kunt per post met één klik navigeren via Google Maps.
 
 **Printversie** (`/print?day=N`, knop in de admin): pagina 1 is het totaalplan (overzichtskaart + tabel met alle posten, tijden en teams), daarna per team een eigen deel met overzichtskaart en per post het adres, een detailkaartje en Street View-foto's vanuit vier windrichtingen. Hiervoor moeten naast de eerdere API's ook de **Maps Static API** en de **Street View Static API** ingeschakeld zijn (en in de API-restricties van de key staan).
 

@@ -245,8 +245,10 @@ details > *:not(summary) { margin-top: 0.5rem; }
 .warning { color: var(--danger); font-weight: 600; }
 
 .nav-link {
-  display: inline-block;
-  margin-top: 0.35rem;
+  /* Eigen regel onder de tekst — niet achter de tijden aan plakken. */
+  display: block;
+  width: fit-content;
+  margin-top: 0.45rem;
   background: var(--brand);
   color: var(--brand-contrast);
   border-radius: var(--radius-pill);

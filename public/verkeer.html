@@ -38,17 +38,6 @@
         </div>
       </section>
 
-      <section>
-        <div class="button-row">
-          <button id="gps-start" class="primary">Start GPS</button>
-          <button id="gps-stop" class="danger hidden">Stop GPS</button>
-        </div>
-        <label id="follow-label" class="hidden">
-          <input type="checkbox" id="follow-me" checked /> Kaart volgt mij
-        </label>
-        <p id="gps-status" class="hint"></p>
-      </section>
-
       <p id="vr-warning" class="hint warning"></p>
 
       <details id="info-details">
@@ -59,7 +48,7 @@
           <strong>stoet komt aan</strong> = de kop van de stoet is er,
           <strong>hele stoet voorbij</strong> = alle wandelaars zijn langs en
           jullie mogen naar de volgende post. Navigeren naar een post gaat via
-          de Google Maps-knop; let onderweg zelf op de stoet en kruis die niet.
+          de navigeerknop; let onderweg zelf op de stoet en kruis die niet.
           Klik op een punt voor Street View.
         </p>
       </details>
@@ -72,7 +61,6 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/map-common.js"></script>
-  <script src="/gps.js"></script>
   <script src="/verkeer.js"></script>
 </body>
 </html>
