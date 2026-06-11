@@ -18,14 +18,16 @@ app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
-const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'favicon.ico', '']);
+const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'favicon.ico', '']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 let pool = null;
 if (process.env.DATABASE_URL) {
+  // SSL aan voor gehoste databases (Neon); uit voor lokale verbindingen.
+  const local = /localhost|127\.0\.0\.1|host=\/|sslmode=disable/.test(process.env.DATABASE_URL);
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    ssl: local ? false : { rejectUnauthorized: false },
   });
 } else {
   console.warn('DATABASE_URL is niet gezet — opslaan werkt niet.');
@@ -316,6 +318,12 @@ app.get('/api/events', async (req, res) => {
 
 app.post('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
+  // Nieuwe avondvierdaagsen aanmaken kan alleen door de platformbeheerder
+  // (master-wachtwoord), via de /beheer-pagina.
+  const master = process.env.ADMIN_PASSWORD || '';
+  if (!master || req.get('x-admin-password') !== master) {
+    return res.status(401).json({ error: 'Alleen de platformbeheerder kan een avondvierdaagse aanmaken.' });
+  }
   const { name, slug, password } = req.body || {};
   const cleanName = String(name || '').trim();
   const cleanSlug = String(slug || '').trim().toLowerCase();
@@ -955,10 +963,18 @@ app.get('/', async (req, res) => {
   sendPage(res, 'landing.html');
 });
 
-// Op een subdomein staan de subpagina's direct in de root.
+// /admin: op een event-subdomein het routebeheer van dat event; op het
+// hoofddomein (of de onrender-URL) het platformbeheer, waar de
+// platformbeheerder nieuwe avondvierdaagsen aanmaakt.
+app.get('/admin', async (req, res) => {
+  const hostSlug = slugFromHost(req);
+  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'admin.html');
+  sendPage(res, 'beheer.html');
+});
+
+// Op een subdomein staan de overige subpagina's direct in de root.
 for (const [route, file] of [
   ['/verkeer', 'verkeer.html'],
-  ['/admin', 'admin.html'],
   ['/print', 'print.html'],
 ]) {
   app.get(route, async (req, res) => {

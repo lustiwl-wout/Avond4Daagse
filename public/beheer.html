@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="color-scheme" content="only light" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Avond4Daagse Routeplanner</title>
+  <title>Platformbeheer — Avond4Daagse Routeplanner</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -27,21 +27,21 @@
       border-radius: var(--radius);
       padding: 1rem;
     }
+    .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
+    .slug-preview { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
     #event-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
-    #event-list a {
-      display: block;
+    #event-list li {
       background: var(--bg);
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 0.7rem 0.9rem;
+      padding: 0.6rem 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
       font-weight: 600;
-      color: var(--ink);
-      text-decoration: none;
     }
-    #event-list a:hover { border-color: var(--brand); }
-    .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
-    .landing input { margin-bottom: 0.2rem; }
-    .slug-preview { font-size: 0.8rem; color: var(--muted); }
+    #event-list a { color: var(--brand); font-size: 0.8rem; text-decoration: none; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -52,24 +52,39 @@
         <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
       </svg>
       <div>
-        <h1>Avond4Daagse Routeplanner</h1>
-        <p class="sub">Routes, verkeersregelaars en sponsoracties — voor elke avondvierdaagse</p>
+        <h1>Platformbeheer</h1>
+        <p class="sub">Avond4Daagse Routeplanner</p>
       </div>
     </div>
+    <a href="/" id="back-link">Startpagina</a>
   </header>
 
   <div class="landing">
     <div class="card">
-      <h2>Kies jouw avondvierdaagse</h2>
-      <ul id="event-list"><li class="hint">Laden…</li></ul>
+      <h2>Nieuwe avondvierdaagse aanmaken</h2>
+      <label for="master-password">Master-wachtwoord (platformbeheerder)</label>
+      <input type="password" id="master-password" />
+      <label for="new-name">Naam van de organisatie</label>
+      <input type="text" id="new-name" placeholder="bijv. Basisschool De Regenboog" maxlength="60" />
+      <label for="new-slug">Webadres</label>
+      <input type="text" id="new-slug" placeholder="bijv. de-regenboog" maxlength="40" />
+      <p class="slug-preview" id="slug-preview"></p>
+      <label for="new-password">Beheerwachtwoord voor deze avondvierdaagse (minimaal 6 tekens)</label>
+      <input type="password" id="new-password" />
+      <button id="create-btn" class="primary" style="width:100%; margin-top:0.8rem">Aanmaken</button>
+      <p id="create-status" class="hint"></p>
     </div>
 
+    <div class="card">
+      <h2>Bestaande avondvierdaagsen</h2>
+      <ul id="event-list"><li class="hint">Laden…</li></ul>
+    </div>
   </div>
 
   <footer class="contact-footer">
     Vragen of hulp nodig? Mail <a href="mailto:wouter.lustig@outlook.com">wouter.lustig@outlook.com</a>
   </footer>
 
-  <script src="/landing.js"></script>
+  <script src="/beheer.js"></script>
 </body>
 </html>

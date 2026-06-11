@@ -1,6 +1,6 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. Elke school of vereniging maakt op de startpagina gratis een eigen avondvierdaagse aan (eigen webadres + eigen beheerwachtwoord) en krijgt: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, verkeersregelaarsplanning met printversie, en sponsoracties. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
+Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. De platformbeheerder maakt op het hoofddomein onder `/admin` (master-wachtwoord) avondvierdaagsen aan; elke organisatie krijgt een eigen webadres, een eigen beheerwachtwoord en: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, verkeersregelaarsplanning met printversie, en sponsoracties. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
 
 Bestaat de installatie al langer met één organisatie, dan migreert de bestaande data bij het opstarten automatisch naar het event `syncope`; het oude `ADMIN_PASSWORD` blijft daar werken.
 
@@ -8,9 +8,10 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 | URL | Voor wie | Wat |
 |---|---|---|
-| `/` | Iedereen | Landingspagina: kies een avondvierdaagse of start er zelf één |
+| `/` | Iedereen | Landingspagina met de lijst van avondvierdaagsen |
+| `/admin` (hoofddomein) | Platformbeheerder (master-wachtwoord) | Avondvierdaagsen aanmaken en overzien |
 | `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View, sponsoractie aanmelden. Mobiel-eerst. |
-| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps |
+| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps |
 | `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams, loopdagen en sponsoracties beheren |
 | `/<naam>/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 

@@ -92,6 +92,7 @@ function buildSandbox() {
 
 const pages = {
   'landing.js': ['landing.js'],
+  'beheer.js': ['beheer.js'],
   'app.js': ['map-common.js', 'gps.js', 'app.js'],
   'verkeer.js': ['map-common.js', 'gps.js', 'verkeer.js'],
   'admin.js': ['map-common.js', 'gps.js', 'admin.js'],
