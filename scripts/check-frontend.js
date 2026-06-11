@@ -67,7 +67,7 @@ function buildSandbox() {
     JSON,
     Promise,
     document: documentStub,
-    location: { search: '', href: 'http://localhost/syncope/', pathname: '/syncope/', origin: 'http://localhost', hostname: 'localhost' },
+    location: { search: '', href: 'https://syncope.a4droute.nl/', pathname: '/', origin: 'https://syncope.a4droute.nl', hostname: 'syncope.a4droute.nl', protocol: 'https:' },
     navigator: { geolocation: { watchPosition: () => 1, clearWatch() {} } },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     alert() {},

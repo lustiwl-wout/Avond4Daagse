@@ -10,10 +10,10 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 |---|---|---|
 | `/` | Iedereen | Landingspagina met de lijst van avondvierdaagsen |
 | `/admin` (hoofddomein) | Platformbeheerder (master-wachtwoord) | Avondvierdaagsen aanmaken en overzien |
-| `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
-| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
-| `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
-| `/<naam>/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
+| `<naam>.a4droute.nl` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
+| `<naam>.a4droute.nl/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
+| `<naam>.a4droute.nl/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
+| `<naam>.a4droute.nl/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
 ## Routes beheren (`/admin`)
 
@@ -82,16 +82,15 @@ npm start              # http://localhost:3000
    `postgresql://...@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`.
 3. Meer hoef je niet te doen: de app maakt de `day_routes`-tabel zelf aan bij het opstarten.
 
-## Eigen domein met subdomeinen per event (optioneel)
+## Eigen domein met subdomeinen per event
 
-Standaard zijn events bereikbaar via een pad: `a4droute.nl/syncope`. Mooier is een subdomein per event: `syncope.a4droute.nl`. Zo zet je dat aan:
+Elk event leeft op een eigen subdomein: `syncope.a4droute.nl`. Zo zet je dat op:
 
 1. Koop een domein (bv. `a4droute.nl`) en voeg het in Render toe onder **Settings → Custom Domains**: zowel `a4droute.nl` als `*.a4droute.nl` (wildcard).
 2. Zet bij je registrar de DNS-records die Render toont (A-record voor het hoofddomein, CNAME/wildcard voor `*`).
 3. Zet de omgevingsvariabele `BASE_DOMAIN=a4droute.nl` in Render.
 4. Voeg in de Google Cloud Console `https://a4droute.nl/*` en `https://*.a4droute.nl/*` toe aan de referrer-restrictie van je key (anders valt Street View stil).
 
-Beide vormen blijven daarna werken, ook de oude `*.onrender.com`-URL.
 
 ## Stap 3 — Deployen op Render
 
@@ -101,7 +100,7 @@ Beide vormen blijven daarna werken, ook de oude `*.onrender.com`-URL.
    - `DATABASE_URL` = je Neon-connectiestring
    - `GOOGLE_MAPS_API_KEY` = je Google Maps-key (Street View)
    - `ADMIN_PASSWORD` = master-wachtwoord van de platformbeheerder (optioneel; events hebben hun eigen wachtwoord)
-   - `BASE_DOMAIN` = eigen domein voor subdomeinen per event (optioneel, zie hierboven)
+   - `BASE_DOMAIN` = eigen domein; elk event krijgt een subdomein (zie hierboven)
 4. Deploy — klaar! 🎉
 
 > De GPS-functie werkt alleen via HTTPS; op Render is dat automatisch geregeld.

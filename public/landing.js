@@ -5,16 +5,18 @@ async function loadEvents() {
   try {
     const res = await fetch('/api/events');
     if (!res.ok) throw new Error();
-    const events = await res.json();
+    const { baseDomain, events } = await res.json();
     list.innerHTML = '';
     if (events.length === 0) {
       list.innerHTML = '<li class="hint">Er zijn nog geen avondvierdaagsen gepubliceerd.</li>';
       return;
     }
+    // Elk event leeft op zijn eigen subdomein.
+    const base = baseDomain || location.hostname;
     for (const ev of events) {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = `/${ev.slug}`;
+      a.href = `${location.protocol}//${ev.slug}.${base}`;
       a.textContent = ev.name;
       li.appendChild(a);
       list.appendChild(li);

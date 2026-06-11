@@ -14,25 +14,15 @@ const nameInput = document.getElementById('new-name');
 const slugInput = document.getElementById('new-slug');
 const preview = document.getElementById('slug-preview');
 let slugTouched = false;
+// Elk event leeft op een eigen subdomein; het basisdomein komt van de server.
+let baseDomain = location.hostname;
 
-function baseHost() {
-  // Op een subdomein-installatie tonen we het subdomein-adres als voorbeeld.
-  const labels = location.hostname.split('.');
-  if (labels.length > 2 && !location.hostname.endsWith('.onrender.com')) {
-    return labels.slice(1).join('.');
-  }
-  return null;
+function eventLink(slug, page = '') {
+  return `${location.protocol}//${slug}.${baseDomain}${page}`;
 }
 
 function updatePreview() {
-  if (!slugInput.value) {
-    preview.textContent = '';
-    return;
-  }
-  const base = baseHost();
-  preview.textContent = base
-    ? `Pagina: https://${slugInput.value}.${base}`
-    : `Pagina: ${location.origin}/${slugInput.value}`;
+  preview.textContent = slugInput.value ? `Pagina: ${eventLink(slugInput.value)}` : '';
 }
 
 nameInput.addEventListener('input', () => {
@@ -63,7 +53,7 @@ document.getElementById('create-btn').addEventListener('click', async () => {
   });
   if (res.ok) {
     const { slug } = await res.json();
-    status.textContent = `Gelukt! De avondvierdaagse staat op /${slug} — beheer via /${slug}/admin.`;
+    status.textContent = `Gelukt! De avondvierdaagse staat op ${eventLink(slug)} — beheer via ${eventLink(slug, '/admin')}.`;
     nameInput.value = '';
     slugInput.value = '';
     document.getElementById('new-password').value = '';
@@ -81,8 +71,10 @@ async function loadEvents() {
   try {
     const res = await fetch('/api/events');
     if (!res.ok) throw new Error();
-    const events = await res.json();
+    const { baseDomain: base, events } = await res.json();
+    if (base) baseDomain = base;
     list.innerHTML = '';
+    updatePreview();
     if (events.length === 0) {
       list.innerHTML = '<li class="hint">Nog geen avondvierdaagsen.</li>';
       return;
@@ -93,7 +85,7 @@ async function loadEvents() {
       name.textContent = ev.name;
       li.appendChild(name);
       const links = document.createElement('span');
-      links.innerHTML = `<a href="/${ev.slug}">bekijken</a> · <a href="/${ev.slug}/admin">beheer</a> · `;
+      links.innerHTML = `<a href="${eventLink(ev.slug)}">bekijken</a> · <a href="${eventLink(ev.slug, '/admin')}">beheer</a> · `;
       const pwdLink = document.createElement('a');
       pwdLink.href = '#';
       pwdLink.textContent = 'wachtwoord';

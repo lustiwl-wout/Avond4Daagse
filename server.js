@@ -11,8 +11,8 @@ const port = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // Eén installatie host meerdere avondvierdaagsen ("events"): elke
-// organisatie heeft een eigen pad (/syncope, /obs-noord, …) met eigen
-// routes, teams, instellingen en beheerwachtwoord.
+// organisatie heeft een eigen subdomein (syncope.a4droute.nl, …) met
+// eigen routes, teams, instellingen en beheerwachtwoord.
 // Het master-wachtwoord (omgevingsvariabele ADMIN_PASSWORD) werkt op
 // elk event — handig voor de platformbeheerder.
 
@@ -611,7 +611,9 @@ app.get('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   try {
     const { rows } = await pool.query('SELECT slug, name FROM events ORDER BY name');
-    res.json(rows);
+    // baseDomain erbij: de frontend bouwt dan subdomein-links
+    // (syncope.a4droute.nl) in plaats van pad-links (/syncope).
+    res.json({ baseDomain: BASE_DOMAIN || null, events: rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Lijst ophalen mislukt.' });
@@ -1314,8 +1316,9 @@ eventApi.delete('/admin/teams/:id', async (req, res) => {
 });
 
 // --- Pagina's ---
-// Events zijn bereikbaar via een pad (a4droute.nl/syncope) én — met
-// BASE_DOMAIN ingesteld — via een subdomein (syncope.a4droute.nl).
+// Elk event leeft op zijn eigen subdomein (syncope.a4droute.nl, via
+// BASE_DOMAIN); het hoofddomein heeft alleen de landingspagina en het
+// platformbeheer.
 
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || '').toLowerCase();
 
@@ -1374,18 +1377,6 @@ for (const [route, file] of [
   });
 }
 
-async function serveEventPage(req, res, file) {
-  const slug = String(req.params.slug).toLowerCase();
-  if (RESERVED_SLUGS.has(slug) || !SLUG_RE.test(slug)) return res.redirect('/');
-  if (!(await eventExists(slug))) return res.redirect('/');
-  sendPage(res, file);
-}
-
-app.get('/:slug', (req, res) => serveEventPage(req, res, 'index.html'));
-app.get('/:slug/verkeer', (req, res) => serveEventPage(req, res, 'verkeer.html'));
-app.get('/:slug/admin', (req, res) => serveEventPage(req, res, 'admin.html'));
-app.get('/:slug/print', (req, res) => serveEventPage(req, res, 'print.html'));
-app.get('/:slug/simulate', (req, res) => serveEventPage(req, res, 'index.html'));
 
 // Direct luisteren — Render zet een deploy pas live zodra de poort open is,
 // dus de (soms trage) database-initialisatie mag dat niet blokkeren.
