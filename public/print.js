@@ -34,10 +34,15 @@ function fmtMoment(min) {
 }
 
 async function init() {
+  // Dag- en beheerlinks in de werkbalk op dit event richten.
+  document.querySelectorAll('[data-day-link]').forEach((a) => {
+    a.href = `/${SLUG}/print?day=${a.dataset.dayLink}`;
+  });
+  document.getElementById('admin-link').href = `/${SLUG}/admin`;
   const [cfgRes, routesRes, teamsRes] = await Promise.all([
-    fetch('/api/config'),
-    fetch('/api/routes'),
-    fetch('/api/teams'),
+    fetch(api('/config')),
+    fetch(api('/routes')),
+    fetch(api('/teams')),
   ]);
   const config = await cfgRes.json();
   svStaticKey = config.googleMapsApiKey || '';

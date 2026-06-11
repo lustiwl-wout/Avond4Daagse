@@ -2,7 +2,7 @@
 // tijdschema, volg jezelf met GPS en navigeer naar een post via Google Maps.
 // Geen wachtwoord nodig. Kaart via OpenStreetMap/Leaflet; Street View en
 // navigatie via Google.
-const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
+const NL_CENTER = { lat: 52.2, lng: 5.3 };
 
 let map;
 let selectedDay = 1;
@@ -18,8 +18,9 @@ let lastSortedCrossings = [];
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
 async function init() {
-  const res = await fetch('/api/config');
+  const res = await fetch(api('/config'));
   const config = await res.json();
+  document.getElementById('back-link').href = `/${SLUG}`;
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
@@ -32,7 +33,7 @@ async function init() {
     tab.classList.toggle('active', Number(tab.dataset.day) === selectedDay);
   });
 
-  map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
+  map = createMap('map', startFinish || NL_CENTER, startFinish ? 15 : 8);
 
   if (startFinish) {
     L.marker([startFinish.lat, startFinish.lng], {
@@ -48,7 +49,7 @@ async function init() {
 
 async function loadData() {
   try {
-    const [routesRes, teamsRes] = await Promise.all([fetch('/api/routes'), fetch('/api/teams')]);
+    const [routesRes, teamsRes] = await Promise.all([fetch(api('/routes')), fetch(api('/teams'))]);
     if (routesRes.ok) {
       for (const row of await routesRes.json()) {
         const path = (row.path && row.path.length > 1 ? row.path : row.waypoints) || [];

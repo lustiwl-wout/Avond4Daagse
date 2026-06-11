@@ -1,22 +1,23 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor het organiseren van een avondvierdaagse — voor élke school of vereniging. Bezoekers zien de wandelroutes van dag 1 t/m 4 op de kaart (OpenStreetMap) en volgen onderweg hun eigen positie met GPS; verkeersregelaars krijgen hun posten, tijdschema en navigatie; de organisatie beheert alles op een afgeschermde adminpagina. Routes staan in een (gratis) Neon PostgreSQL-database en de app draait op Render.
+Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. Elke school of vereniging maakt op de startpagina gratis een eigen avondvierdaagse aan (eigen webadres + eigen beheerwachtwoord) en krijgt: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, verkeersregelaarsplanning met printversie, en sponsoracties. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
 
-Elke organisatie draait zijn eigen exemplaar: fork/kloon deze repository, deploy hem en stel twee omgevingsvariabelen in — `ORG_NAME` (naam van je school/vereniging, komt in de koppen en op de print) en optioneel `START_ADDRESS` (het start/finish-adres; zonder adres sleep je de vlag in de admin zelf op zijn plek). De kleuren van de huisstijl staan als variabelen bovenaan `public/style.css`.
+Bestaat de installatie al langer met één organisatie, dan migreert de bestaande data bij het opstarten automatisch naar het event `syncope`; het oude `ADMIN_PASSWORD` blijft daar werken.
 
 ## Pagina's
 
 | URL | Voor wie | Wat |
 |---|---|---|
-| `/` | Iedereen | Routes van dag 1 t/m 4 bekijken (elk een eigen kleur), afstanden, GPS aan om jezelf op de kaart te volgen tijdens het lopen, Street View via het gele poppetje. Mobiel-eerst opgezet. |
-| `/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps. Mobiel-eerst opgezet. |
-| `/admin` | Beheer (wachtwoord) | Routes tekenen (ook al lopend vastleggen via GPS), kruisingen, teams en planning beheren |
-| `/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
+| `/` | Iedereen | Landingspagina: kies een avondvierdaagse of start er zelf één |
+| `/<naam>` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View, sponsoractie aanmelden. Mobiel-eerst. |
+| `/<naam>/verkeer` | Verkeersregelaars (geen wachtwoord) | Team kiezen, eigen posten + tijdschema zien, GPS starten en per post navigeren via Google Maps |
+| `/<naam>/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams, loopdagen en sponsoracties beheren |
+| `/<naam>/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
 
 ## Routes beheren (`/admin`)
 
-- Log in met het beheerwachtwoord (`ADMIN_PASSWORD`).
-- **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Is `START_ADDRESS` ingesteld, dan zoekt de app dit punt bij de eerste keer inloggen automatisch op; daarna (of zonder adres) sleep je de vlag precies op zijn plek. Bezoekers zien alleen de vlag, geen adres.
+- Log in met het beheerwachtwoord van jouw event (gekozen bij het aanmaken). Het master-wachtwoord van de platformbeheerder (omgevingsvariabele `ADMIN_PASSWORD`) werkt op elk event.
+- **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt: zoek het adres op in de admin of sleep de vlag op zijn plek. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
@@ -85,10 +86,8 @@ npm start              # http://localhost:3000
 2. Ga naar [render.com](https://render.com) → **New → Web Service** en koppel de repository (of gebruik **New → Blueprint**, dan wordt `render.yaml` automatisch gelezen).
 3. Zet bij **Environment Variables**:
    - `DATABASE_URL` = je Neon-connectiestring
-   - `GOOGLE_MAPS_API_KEY` = je Google Maps-key
-   - `ADMIN_PASSWORD` = zelfgekozen wachtwoord voor `/admin`
-   - `ORG_NAME` = naam van je school/vereniging
-   - `START_ADDRESS` = start/finish-adres (optioneel)
+   - `GOOGLE_MAPS_API_KEY` = je Google Maps-key (Street View)
+   - `ADMIN_PASSWORD` = master-wachtwoord van de platformbeheerder (optioneel; events hebben hun eigen wachtwoord)
 4. Deploy — klaar! 🎉
 
 > De GPS-functie werkt alleen via HTTPS; op Render is dat automatisch geregeld.

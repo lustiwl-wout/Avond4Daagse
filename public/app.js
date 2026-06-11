@@ -1,7 +1,7 @@
 // Bezoekerspagina: toont de routes van dag 1 t/m 4 (OpenStreetMap/Leaflet)
 // en volgt je met GPS. Alle routes starten en eindigen op het vaste
 // start/finish-punt. Street View loopt via Google (overlay).
-const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
+const NL_CENTER = { lat: 52.2, lng: 5.3 };
 
 let map;
 let selectedDay = 1;
@@ -14,8 +14,9 @@ const routes = {}; // day -> { line, bounds, distance_m, path, pauseMarker, spon
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
 async function init() {
-  const res = await fetch('/api/config');
+  const res = await fetch(api('/config'));
   const config = await res.json();
+  document.getElementById('back-link').href = `/${SLUG}/verkeer`;
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = '' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
@@ -26,7 +27,7 @@ async function init() {
   // Standaard de eerstvolgende loopdag tonen.
   selectDayTab(config.defaultDay || 1);
 
-  map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
+  map = createMap('map', startFinish || NL_CENTER, startFinish ? 15 : 8);
   map.on('click', onMapClick);
 
   if (startFinish) {
@@ -58,7 +59,7 @@ async function loadRoutes() {
   const list = document.getElementById('distance-list');
   let rows = [];
   try {
-    const res = await fetch('/api/routes');
+    const res = await fetch(api('/routes'));
     if (!res.ok) throw new Error();
     rows = await res.json();
   } catch {
@@ -94,7 +95,7 @@ async function loadRoutes() {
 
   // Aangemelde sponsoracties als sterren op de kaart (alleen plek + actie).
   try {
-    const sres = await fetch('/api/sponsors');
+    const sres = await fetch(api('/sponsors'));
     if (sres.ok) {
       for (const s of await sres.json()) {
         if (!routes[s.day]) continue;
@@ -243,7 +244,7 @@ function openSponsorForm(hit) {
   status.className = 'hint';
   const submit = menuButton('Aanmelden', async () => {
     status.textContent = 'Versturen…';
-    const res = await fetch('/api/sponsors', {
+    const res = await fetch(api('/sponsors'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <header>
@@ -59,6 +59,17 @@
         </section>
 
         <div id="route-mode">
+          <section>
+            <h2>Start &amp; finish</h2>
+            <p class="hint">
+              Eén vast start/finish-punt voor alle dagen. Zoek het adres op of
+              sleep de markering op de kaart; bezoekers zien alleen de vlag,
+              nooit het adres.
+            </p>
+            <input type="text" id="start-address" placeholder="bijv. Schoolstraat 1, Almere" />
+            <button id="start-search">Zoek adres en zet start &amp; finish</button>
+          </section>
+
           <section>
             <h2>Route tekenen</h2>
             <p class="hint">
@@ -207,6 +218,10 @@
         </details>
 
         <p id="save-status" class="hint"></p>
+
+        <p class="hint contact-line">
+          Vragen? Mail <a href="mailto:wouter.lustig@outlook.com">wouter.lustig@outlook.com</a>
+        </p>
       </div>
     </aside>
 
@@ -216,8 +231,8 @@
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="map-common.js"></script>
-  <script src="gps.js"></script>
-  <script src="admin.js"></script>
+  <script src="/map-common.js"></script>
+  <script src="/gps.js"></script>
+  <script src="/admin.js"></script>
 </body>
 </html>

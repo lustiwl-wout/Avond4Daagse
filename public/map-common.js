@@ -2,6 +2,12 @@
 // Google wordt alleen nog gebruikt voor Street View (overlay + printfoto's).
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 
+// Event-slug uit het URL-pad (/syncope, /syncope/verkeer, …).
+const SLUG = decodeURIComponent((location.pathname.split('/')[1] || '').toLowerCase());
+function api(p) {
+  return `/api/${SLUG}${p}`;
+}
+
 function createMap(elementId, center, zoom) {
   const map = L.map(elementId).setView([center.lat, center.lng], zoom);
   const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {

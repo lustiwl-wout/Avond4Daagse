@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="color-scheme" content="only light" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Avond4Daagse Routeplanner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+  <style>
+    body { height: auto; min-height: 100dvh; }
+    .landing {
+      max-width: 34rem;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 3rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.2rem;
+      width: 100%;
+    }
+    .landing h2 { font-size: 1rem; }
+    .landing .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    #event-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    #event-list a {
+      display: block;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 0.7rem 0.9rem;
+      font-weight: 600;
+      color: var(--ink);
+      text-decoration: none;
+    }
+    #event-list a:hover { border-color: var(--brand); }
+    .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
+    .landing input { margin-bottom: 0.2rem; }
+    .slug-preview { font-size: 0.8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2a7 7 0 0 0-7 7c0 4.9 5.4 11.2 6.6 12.5a.55.55 0 0 0 .8 0C13.6 20.2 19 13.9 19 9a7 7 0 0 0-7-7z" fill="currentColor"/>
+        <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
+      </svg>
+      <div>
+        <h1>Avond4Daagse Routeplanner</h1>
+        <p class="sub">Routes, verkeersregelaars en sponsoracties — voor elke avondvierdaagse</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="landing">
+    <div class="card">
+      <h2>Kies jouw avondvierdaagse</h2>
+      <ul id="event-list"><li class="hint">Laden…</li></ul>
+    </div>
+
+    <div class="card">
+      <h2>Start je eigen avondvierdaagse</h2>
+      <p class="hint">
+        Gratis: maak een eigen pagina aan voor jouw school of vereniging, met
+        routes per dag, GPS voor de lopers, verkeersregelaarsplanning en
+        sponsoracties.
+      </p>
+      <label for="new-name">Naam van je organisatie</label>
+      <input type="text" id="new-name" placeholder="bijv. Basisschool De Regenboog" maxlength="60" />
+      <label for="new-slug">Webadres</label>
+      <input type="text" id="new-slug" placeholder="bijv. de-regenboog" maxlength="40" />
+      <p class="slug-preview" id="slug-preview"></p>
+      <label for="new-password">Beheerwachtwoord (minimaal 6 tekens)</label>
+      <input type="password" id="new-password" />
+      <button id="create-btn" class="primary" style="width:100%; margin-top:0.8rem">Aanmaken</button>
+      <p id="create-status" class="hint"></p>
+    </div>
+  </div>
+
+  <footer class="contact-footer">
+    Vragen of hulp nodig? Mail <a href="mailto:wouter.lustig@outlook.com">wouter.lustig@outlook.com</a>
+  </footer>
+
+  <script src="/landing.js"></script>
+</body>
+</html>

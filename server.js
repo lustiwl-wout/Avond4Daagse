@@ -6,31 +6,19 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Naam van de organisatie (school/vereniging) die deze installatie gebruikt.
-const ORG_NAME = process.env.ORG_NAME || 'Avondvierdaagse';
-
-// Vast start- en eindpunt van alle routes. Het adres wordt alleen op de
-// beheerpagina gebruikt om de plek eenmalig op te zoeken; bezoekers zien
-// alleen een "Start & finish"-markering zonder adres. Niet ingesteld?
-// Dan sleept de beheerder de vlag zelf op zijn plek.
-const START_ADDRESS = process.env.START_ADDRESS || '';
+// Eén installatie host meerdere avondvierdaagsen ("events"): elke
+// organisatie heeft een eigen pad (/syncope, /obs-noord, …) met eigen
+// routes, teams, sponsors, instellingen en beheerwachtwoord.
+// Het master-wachtwoord (omgevingsvariabele ADMIN_PASSWORD) werkt op
+// elk event — handig voor de platformbeheerder.
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
-});
+const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
-// Verkeersregelaars werken vanaf /verkeer (geen wachtwoord nodig).
-app.get('/verkeer', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'verkeer.html'));
-});
-
-// Printversie van het verkeersregelaarsplan.
-app.get('/print', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'print.html'));
-});
+const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'favicon.ico', '']);
+const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 let pool = null;
 if (process.env.DATABASE_URL) {
@@ -39,39 +27,54 @@ if (process.env.DATABASE_URL) {
     ssl: { rejectUnauthorized: false },
   });
 } else {
-  console.warn('DATABASE_URL is niet gezet — routes opslaan werkt niet.');
+  console.warn('DATABASE_URL is niet gezet — opslaan werkt niet.');
 }
 
 async function initDb() {
   if (!pool) return;
   await pool.query(`
+    CREATE TABLE IF NOT EXISTS events (
+      id SERIAL PRIMARY KEY,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS day_routes (
-      day INTEGER PRIMARY KEY CHECK (day BETWEEN 1 AND 4),
+      event_id INTEGER NOT NULL,
+      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
       waypoints JSONB NOT NULL,
       path JSONB,
       distance_m INTEGER,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      crossings JSONB,
+      pause JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (event_id, day)
     )
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
+      event_id INTEGER NOT NULL,
+      key TEXT NOT NULL,
       value JSONB NOT NULL,
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (event_id, key)
     )
   `);
-  await pool.query('ALTER TABLE day_routes ADD COLUMN IF NOT EXISTS crossings JSONB');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS teams (
       id SERIAL PRIMARY KEY,
+      event_id INTEGER NOT NULL,
       name TEXT NOT NULL,
-      color TEXT NOT NULL,
-      mode TEXT NOT NULL DEFAULT 'BICYCLING'
+      color TEXT NOT NULL
     )
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS route_drafts (
       id SERIAL PRIMARY KEY,
+      event_id INTEGER NOT NULL,
       day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
       waypoints JSONB NOT NULL,
       path JSONB,
@@ -79,11 +82,10 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
-  await pool.query('CREATE INDEX IF NOT EXISTS route_drafts_day_idx ON route_drafts (day, id DESC)');
-  await pool.query('ALTER TABLE day_routes ADD COLUMN IF NOT EXISTS pause JSONB');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS sponsors (
       id SERIAL PRIMARY KEY,
+      event_id INTEGER NOT NULL,
       day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
       lat DOUBLE PRECISION NOT NULL,
       lng DOUBLE PRECISION NOT NULL,
@@ -95,13 +97,64 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS route_drafts_event_day_idx ON route_drafts (event_id, day, id DESC)'
+  );
+  await migrateToEvents();
 }
 
-async function getSetting(key) {
-  if (!pool) return null;
-  const { rows } = await pool.query('SELECT value FROM settings WHERE key = $1', [key]);
-  return rows.length > 0 ? rows[0].value : null;
+// Migratie van een oudere één-organisatie-installatie: bestaande data
+// (zonder event_id) wordt het event "syncope"; het bestaande
+// ADMIN_PASSWORD blijft daar werken als eigen wachtwoord.
+async function migrateToEvents() {
+  for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+    await pool.query(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS event_id INTEGER`);
+  }
+
+  const { rows: existingEvents } = await pool.query('SELECT id FROM events ORDER BY id LIMIT 1');
+  let defaultEventId = existingEvents.length > 0 ? existingEvents[0].id : null;
+
+  const { rows: orphan } = await pool.query('SELECT 1 FROM day_routes WHERE event_id IS NULL LIMIT 1');
+  if (defaultEventId === null && orphan.length > 0) {
+    const hash = sha256(process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex'));
+    const { rows } = await pool.query(
+      `INSERT INTO events (slug, name, password_hash)
+       VALUES ('syncope', 'Basisschool Syncope · Almere', $1)
+       ON CONFLICT (slug) DO UPDATE SET name = events.name
+       RETURNING id`,
+      [hash]
+    );
+    defaultEventId = rows[0].id;
+    console.log('Bestaande data gemigreerd naar event "syncope".');
+  }
+  if (defaultEventId !== null) {
+    for (const table of ['day_routes', 'settings', 'teams', 'route_drafts', 'sponsors']) {
+      await pool.query(`UPDATE ${table} SET event_id = $1 WHERE event_id IS NULL`, [defaultEventId]);
+    }
+  }
+
+  // Primaire sleutels van oude installaties verbreden naar (event_id, …).
+  async function pkColumns(table) {
+    const { rows } = await pool.query(
+      `SELECT array_agg(a.attname ORDER BY a.attnum) AS cols
+       FROM pg_index i
+       JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+       WHERE i.indrelid = $1::regclass AND i.indisprimary`,
+      [table]
+    );
+    return (rows[0] && rows[0].cols) || [];
+  }
+  if ((await pkColumns('day_routes')).join(',') === 'day') {
+    await pool.query('ALTER TABLE day_routes DROP CONSTRAINT day_routes_pkey');
+    await pool.query('ALTER TABLE day_routes ADD PRIMARY KEY (event_id, day)');
+  }
+  if ((await pkColumns('settings')).join(',') === 'key') {
+    await pool.query('ALTER TABLE settings DROP CONSTRAINT settings_pkey');
+    await pool.query('ALTER TABLE settings ADD PRIMARY KEY (event_id, key)');
+  }
 }
+
+// --- Hulpfuncties ---
 
 function requireDb(res) {
   if (!pool) {
@@ -112,15 +165,11 @@ function requireDb(res) {
 }
 
 function requireAdmin(req, res) {
-  const expected = process.env.ADMIN_PASSWORD || '';
-  if (!expected) {
-    res.status(503).json({ error: 'ADMIN_PASSWORD is niet ingesteld op de server.' });
-    return false;
-  }
   const given = req.get('x-admin-password') || '';
-  const a = Buffer.from(expected);
-  const b = Buffer.from(given);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+  const master = process.env.ADMIN_PASSWORD || '';
+  const ok =
+    (master && given === master) || (req.event && given && sha256(given) === req.event.password_hash);
+  if (!ok) {
     res.status(401).json({ error: 'Onjuist wachtwoord.' });
     return false;
   }
@@ -140,461 +189,49 @@ function isValidLatLng(p) {
   return p && typeof p.lat === 'number' && typeof p.lng === 'number';
 }
 
-// Datum in Nederland (de eventdatum bepaalt of sponsoracties nog open staan).
+async function getSetting(eventId, key) {
+  const { rows } = await pool.query('SELECT value FROM settings WHERE event_id = $1 AND key = $2', [
+    eventId,
+    key,
+  ]);
+  return rows.length > 0 ? rows[0].value : null;
+}
+
+async function setSetting(eventId, key, value) {
+  await pool.query(
+    `INSERT INTO settings (event_id, key, value, updated_at) VALUES ($1, $2, $3, now())
+     ON CONFLICT (event_id, key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+    [eventId, key, JSON.stringify(value)]
+  );
+}
+
+// Datum in Nederland (de loopdagen bepalen o.a. of sponsoracties open staan).
 function todayNl() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(new Date());
 }
 
-// Loopdagen gesorteerd op datum: [{day, date, time}].
-function scheduleEntries(event) {
-  const days = (event && event.days) || {};
+function scheduleEntries(eventSetting) {
+  const days = (eventSetting && eventSetting.days) || {};
   return [1, 2, 3, 4]
     .filter((d) => days[d] && days[d].date)
     .map((d) => ({ day: d, date: days[d].date, time: days[d].time || null }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-// Sponsoraanmelding staat open tot de eerste loopdag.
-async function isSponsorOpen() {
-  const event = await getSetting('event');
-  const entries = scheduleEntries(event);
+function sponsorOpenFor(eventSetting) {
+  const entries = scheduleEntries(eventSetting);
   if (entries.length > 0) return todayNl() < entries[0].date;
-  // oudere instelling: één losse startdatum
-  if (event && event.startDate) return todayNl() < event.startDate;
+  if (eventSetting && eventSetting.startDate) return todayNl() < eventSetting.startDate;
   return false;
 }
 
-// Standaard te tonen dag: de eerstvolgende loopdag (vandaag telt mee);
-// zijn alle dagen voorbij, dan de laatste; zonder datums dag 1.
-function computeDefaultDay(event) {
-  const entries = scheduleEntries(event);
+function computeDefaultDay(eventSetting) {
+  const entries = scheduleEntries(eventSetting);
   if (entries.length === 0) return 1;
   const today = todayNl();
   const upcoming = entries.find((e) => e.date >= today);
   return upcoming ? upcoming.day : entries[entries.length - 1].day;
 }
-
-// Publieke configuratie: Street View-key, start/finish-punt (zonder adres),
-// planningsinstellingen en de eventdatum/sponsorstatus.
-app.get('/api/config', async (req, res) => {
-  let startFinish = null;
-  let vrSettings = null;
-  let event = null;
-  let sponsorOpen = false;
-  try {
-    startFinish = await getSetting('start_finish');
-    vrSettings = await getSetting('vr_settings');
-    event = await getSetting('event');
-    sponsorOpen = await isSponsorOpen();
-  } catch (err) {
-    console.error('Instellingen ophalen mislukt:', err);
-  }
-  res.json({
-    orgName: ORG_NAME,
-    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
-    startFinish,
-    vrSettings,
-    schedule: (event && event.days) || null,
-    defaultDay: computeDefaultDay(event),
-    sponsorOpen,
-  });
-});
-
-// Admin: datum en starttijd per loopdag instellen. De vroegste datum is de
-// eerste loopdag (tot dan staat de sponsoraanmelding open) en de site toont
-// standaard de eerstvolgende dag.
-app.put('/api/admin/event-schedule', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const { days } = req.body || {};
-  if (!days || typeof days !== 'object') return res.status(400).json({ error: 'Ongeldige planning.' });
-  const cleaned = {};
-  for (const d of [1, 2, 3, 4]) {
-    const entry = days[d] || days[String(d)];
-    if (!entry || !entry.date) continue;
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date))) {
-      return res.status(400).json({ error: `Ongeldige datum bij dag ${d}.` });
-    }
-    if (entry.time && !/^\d{2}:\d{2}$/.test(String(entry.time))) {
-      return res.status(400).json({ error: `Ongeldige tijd bij dag ${d}.` });
-    }
-    cleaned[d] = { date: entry.date, time: entry.time || null };
-  }
-  try {
-    await pool.query(
-      `INSERT INTO settings (key, value, updated_at) VALUES ('event', $1, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify({ days: cleaned })]
-    );
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Planning opslaan mislukt.' });
-  }
-});
-
-// Admin: pauzepunt van een dag plaatsen of weghalen.
-app.put('/api/admin/pause/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { pause } = req.body || {};
-  if (pause !== null && !isValidLatLng(pause)) {
-    return res.status(400).json({ error: 'Ongeldig pauzepunt.' });
-  }
-  try {
-    const { rowCount } = await pool.query(
-      'UPDATE day_routes SET pause = $1, updated_at = now() WHERE day = $2',
-      [pause ? JSON.stringify(pause) : null, day]
-    );
-    if (rowCount === 0) return res.status(404).json({ error: 'Publiceer eerst de route van deze dag.' });
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Pauzepunt opslaan mislukt.' });
-  }
-});
-
-// --- Sponsoracties: bezoekers melden vóór het evenement een actie aan ---
-
-// Publiek: alleen plek en actie (geen persoonsgegevens).
-app.get('/api/sponsors', async (req, res) => {
-  if (!requireDb(res)) return;
-  try {
-    const { rows } = await pool.query('SELECT id, day, lat, lng, action FROM sponsors ORDER BY id');
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
-  }
-});
-
-app.post('/api/sponsors', async (req, res) => {
-  if (!requireDb(res)) return;
-  try {
-    if (!(await isSponsorOpen())) {
-      return res.status(403).json({ error: 'De aanmelding voor sponsoracties is gesloten.' });
-    }
-    const { day, lat, lng, firstName, lastName, email, phone, action } = req.body || {};
-    const dayNum = Number(day);
-    const fields = [firstName, lastName, email, phone, action];
-    if (
-      !Number.isInteger(dayNum) || dayNum < 1 || dayNum > 4 ||
-      !isValidLatLng({ lat, lng }) ||
-      !fields.every((f) => typeof f === 'string' && f.trim().length > 0 && f.length <= 500) ||
-      !/^\S+@\S+\.\S+$/.test(email)
-    ) {
-      return res.status(400).json({ error: 'Vul alle velden in (met een geldig e-mailadres).' });
-    }
-    const { rows } = await pool.query(
-      `INSERT INTO sponsors (day, lat, lng, first_name, last_name, email, phone, action)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-      [dayNum, lat, lng, firstName.trim(), lastName.trim(), email.trim(), phone.trim(), action.trim()]
-    );
-    res.status(201).json({ id: rows[0].id });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Aanmelden mislukt.' });
-  }
-});
-
-// Admin: volledige gegevens inzien en aanmeldingen verwijderen.
-app.get('/api/admin/sponsors', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { rows } = await pool.query(
-      `SELECT id, day, lat, lng, first_name, last_name, email, phone, action, created_at
-       FROM sponsors ORDER BY day, id`
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
-  }
-});
-
-app.delete('/api/admin/sponsors/:id', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { rowCount } = await pool.query('DELETE FROM sponsors WHERE id = $1', [Number(req.params.id)]);
-    if (rowCount === 0) return res.status(404).json({ error: 'Aanmelding niet gevonden.' });
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Verwijderen mislukt.' });
-  }
-});
-
-// Admin: planningsinstellingen (tempo's, passeertijd, marge) opslaan.
-app.put('/api/admin/vr-settings', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const { walkKmh, passMin } = req.body || {};
-  if (![walkKmh, passMin].every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
-    return res.status(400).json({ error: 'Ongeldige planningsinstellingen.' });
-  }
-  try {
-    await pool.query(
-      `INSERT INTO settings (key, value, updated_at)
-       VALUES ('vr_settings', $1, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify({ walkKmh, passMin })]
-    );
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Instellingen opslaan mislukt.' });
-  }
-});
-
-// Wachtwoordcontrole voor de adminpagina.
-app.get('/api/admin/check', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  res.status(204).end();
-});
-
-// Alleen voor de adminpagina: het adres om eenmalig te geocoderen.
-app.get('/api/admin/config', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  res.json({ startAddress: START_ADDRESS });
-});
-
-// Admin: start/finish-punt vastleggen.
-app.put('/api/admin/start-finish', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const { lat, lng } = req.body || {};
-  if (typeof lat !== 'number' || typeof lng !== 'number') {
-    return res.status(400).json({ error: 'lat en lng zijn verplicht.' });
-  }
-  try {
-    await pool.query(
-      `INSERT INTO settings (key, value, updated_at)
-       VALUES ('start_finish', $1, now())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify({ lat, lng })]
-    );
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Start/finish opslaan mislukt.' });
-  }
-});
-
-// Publiek: alle dagroutes voor de bezoekerspagina.
-app.get('/api/routes', async (req, res) => {
-  if (!requireDb(res)) return;
-  try {
-    const { rows } = await pool.query(
-      'SELECT day, waypoints, path, distance_m, crossings, pause, updated_at FROM day_routes ORDER BY day'
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Routes ophalen mislukt.' });
-  }
-});
-
-// --- Conceptversies: elke wijziging wordt automatisch bewaard ---
-
-// Laatste concept per dag (plus aantal bewaarde wijzigingen).
-app.get('/api/admin/drafts', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  try {
-    const { rows } = await pool.query(
-      `SELECT DISTINCT ON (day) day, waypoints, path, distance_m
-       FROM route_drafts ORDER BY day, id DESC`
-    );
-    const { rows: counts } = await pool.query(
-      'SELECT day, COUNT(*)::int AS count FROM route_drafts GROUP BY day'
-    );
-    res.json(
-      rows.map((r) => ({
-        ...r,
-        count: (counts.find((c) => c.day === r.day) || { count: 0 }).count,
-      }))
-    );
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Concepten ophalen mislukt.' });
-  }
-});
-
-// Nieuwe conceptversie bewaren (mag ook een lege route zijn).
-app.post('/api/admin/drafts/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { waypoints, path: routePath, distance_m } = req.body;
-  if (!Array.isArray(waypoints) || !waypoints.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Ongeldige punten.' });
-  }
-  try {
-    await pool.query(
-      'INSERT INTO route_drafts (day, waypoints, path, distance_m) VALUES ($1, $2, $3, $4)',
-      [day, JSON.stringify(waypoints), routePath ? JSON.stringify(routePath) : null, distance_m || null]
-    );
-    // Geschiedenis beperken tot de laatste 100 wijzigingen per dag.
-    await pool.query(
-      `DELETE FROM route_drafts WHERE day = $1 AND id NOT IN
-       (SELECT id FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 100)`,
-      [day]
-    );
-    const { rows } = await pool.query(
-      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE day = $1',
-      [day]
-    );
-    res.json({ count: rows[0].count });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Concept bewaren mislukt.' });
-  }
-});
-
-// Laatste wijziging terugdraaien: nieuwste concept weg, vorige terug.
-app.delete('/api/admin/drafts/:day/latest', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  try {
-    await pool.query(
-      `DELETE FROM route_drafts WHERE id =
-       (SELECT id FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 1)`,
-      [day]
-    );
-    const { rows } = await pool.query(
-      'SELECT day, waypoints, path, distance_m FROM route_drafts WHERE day = $1 ORDER BY id DESC LIMIT 1',
-      [day]
-    );
-    const { rows: counts } = await pool.query(
-      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE day = $1',
-      [day]
-    );
-    res.json({ draft: rows[0] || null, count: counts[0].count });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Terugdraaien mislukt.' });
-  }
-});
-
-// Admin: route voor een dag definitief publiceren; alle conceptversies
-// worden daarna gewist. waypoints = de tussenpunten; start/finish ligt vast.
-app.put('/api/routes/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  const { waypoints, path: routePath, distance_m } = req.body;
-  if (!Array.isArray(waypoints) || waypoints.length < 1 || !waypoints.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Een route heeft minimaal 1 tussenpunt nodig.' });
-  }
-  try {
-    const { rows } = await pool.query(
-      `INSERT INTO day_routes (day, waypoints, path, distance_m, updated_at)
-       VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (day) DO UPDATE
-         SET waypoints = EXCLUDED.waypoints,
-             path = EXCLUDED.path,
-             distance_m = EXCLUDED.distance_m,
-             updated_at = now()
-       RETURNING day, waypoints, path, distance_m, updated_at`,
-      [
-        day,
-        JSON.stringify(waypoints),
-        routePath ? JSON.stringify(routePath) : null,
-        distance_m || null,
-      ]
-    );
-    // Definitief: tussenversies zijn niet meer nodig.
-    await pool.query('DELETE FROM route_drafts WHERE day = $1', [day]);
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Route opslaan mislukt.' });
-  }
-});
-
-// Admin: route (met concepten, pauzepunt, oversteekpunten, teamroutes en
-// sponsoracties) naar een andere dag verplaatsen. Heeft de doeldag al een
-// route, dan worden de twee dagen omgewisseld. De loopdag-datums blijven
-// bij hun kalenderdag.
-app.post('/api/admin/move-route', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const from = Number((req.body || {}).from);
-  const to = Number((req.body || {}).to);
-  if (![1, 2, 3, 4].includes(from) || ![1, 2, 3, 4].includes(to) || from === to) {
-    return res.status(400).json({ error: 'Ongeldige dagen.' });
-  }
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-
-    // Dagroutes omwisselen (delete + insert vanwege de primary key op dag).
-    const { rows: routeRows } = await client.query(
-      'SELECT * FROM day_routes WHERE day IN ($1, $2) FOR UPDATE',
-      [from, to]
-    );
-    await client.query('DELETE FROM day_routes WHERE day IN ($1, $2)', [from, to]);
-    for (const r of routeRows) {
-      await client.query(
-        `INSERT INTO day_routes (day, waypoints, path, distance_m, crossings, pause, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, now())`,
-        [
-          r.day === from ? to : from,
-          JSON.stringify(r.waypoints),
-          r.path ? JSON.stringify(r.path) : null,
-          r.distance_m,
-          r.crossings ? JSON.stringify(r.crossings) : null,
-          r.pause ? JSON.stringify(r.pause) : null,
-        ]
-      );
-    }
-
-
-    // Concepten en sponsoracties hebben geen unieke dag-sleutel: direct omwisselen.
-    await client.query(
-      'UPDATE route_drafts SET day = CASE day WHEN $1 THEN $2 ELSE $1 END WHERE day IN ($1, $2)',
-      [from, to]
-    );
-    await client.query(
-      'UPDATE sponsors SET day = CASE day WHEN $1 THEN $2 ELSE $1 END WHERE day IN ($1, $2)',
-      [from, to]
-    );
-
-    await client.query('COMMIT');
-    res.status(204).end();
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => {});
-    console.error('Route verplaatsen mislukt:', err);
-    res.status(500).json({ error: 'Route verplaatsen mislukt.' });
-  } finally {
-    client.release();
-  }
-});
-
-// Admin: route voor een dag verwijderen.
-app.delete('/api/routes/:day', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const day = parseDay(req, res);
-  if (day === null) return;
-  try {
-    const { rowCount } = await pool.query('DELETE FROM day_routes WHERE day = $1', [day]);
-    await pool.query('DELETE FROM route_drafts WHERE day = $1', [day]);
-    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
-    res.status(204).end();
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Route verwijderen mislukt.' });
-  }
-});
 
 // --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
 
@@ -603,42 +240,6 @@ const OSRM_PROFILES = {
   foot: 'https://routing.openstreetmap.de/routed-foot',
 };
 
-// Route berekenen via OSRM (de router van openstreetmap.org): kent alle
-// voet- en fietspaden. De wandelroute gebruikt 'foot', teamroutes 'bike'.
-app.post('/api/admin/route', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const { profile, points } = req.body || {};
-  const base = OSRM_PROFILES[profile];
-  if (!base) return res.status(400).json({ error: 'Onbekend routeprofiel.' });
-  if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
-    return res.status(400).json({ error: 'Ongeldige routepunten.' });
-  }
-  try {
-    const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
-    const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
-    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
-      return res.status(422).json({ error: 'Geen route mogelijk via deze punten.' });
-    }
-    const route = data.routes[0];
-    res.json({
-      path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-      distance_m: Math.round(route.distance),
-      duration_s: Math.round(route.duration),
-      legs: route.legs.map((l) => ({
-        distance_m: Math.round(l.distance),
-        duration_s: Math.round(l.duration),
-      })),
-    });
-  } catch (err) {
-    console.error('OSRM-route mislukt:', err);
-    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar, probeer het zo opnieuw.' });
-  }
-});
-
-// Nominatim (OpenStreetMap-geocoding) met nette throttling (max ~1 verzoek
-// per seconde, zoals hun gebruiksvoorwaarden vragen) en een cache.
 const geoCache = new Map();
 let geoChain = Promise.resolve();
 let lastGeoCall = 0;
@@ -655,23 +256,6 @@ function throttledNominatim(url) {
   geoChain = call.catch(() => {});
   return call;
 }
-
-// Adres opzoeken voor het vaste start/finish-punt (alleen admin).
-app.get('/api/admin/geocode', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const q = String(req.query.q || '').trim();
-  if (!q) return res.status(400).json({ error: 'Geen adres opgegeven.' });
-  try {
-    const data = await throttledNominatim(
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=nl&q=${encodeURIComponent(q)}`
-    );
-    if (!data[0]) return res.status(404).json({ error: 'Adres niet gevonden.' });
-    res.json({ lat: Number(data[0].lat), lng: Number(data[0].lon) });
-  } catch (err) {
-    console.error('Geocoderen mislukt:', err);
-    res.status(502).json({ error: 'Adres opzoeken mislukt.' });
-  }
-});
 
 // Adres bij een punt (publiek, voor de printversie en puntnamen) — gecachet.
 app.get('/api/address', async (req, res) => {
@@ -706,12 +290,447 @@ app.get('/api/address', async (req, res) => {
   }
 });
 
-// --- Verkeersregelaars: oversteekpunten, teams en teamroutes ---
-// Oversteekpunten worden handmatig door de verkeersleider op de kaart gezet.
+// --- Events: lijst en aanmaken (vanaf de landingspagina) ---
 
-// Admin: kruisingen bijwerken (toevoegen, verbergen/tonen, teamtoewijzing).
-app.put('/api/admin/crossings/:day', async (req, res) => {
+app.get('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
+  try {
+    const { rows } = await pool.query('SELECT slug, name FROM events ORDER BY name');
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Lijst ophalen mislukt.' });
+  }
+});
+
+app.post('/api/events', async (req, res) => {
+  if (!requireDb(res)) return;
+  const { name, slug, password } = req.body || {};
+  const cleanName = String(name || '').trim();
+  const cleanSlug = String(slug || '').trim().toLowerCase();
+  if (cleanName.length < 2 || cleanName.length > 60) {
+    return res.status(400).json({ error: 'Geef een naam van 2–60 tekens.' });
+  }
+  if (!SLUG_RE.test(cleanSlug) || RESERVED_SLUGS.has(cleanSlug)) {
+    return res
+      .status(400)
+      .json({ error: 'Webadres mag alleen kleine letters, cijfers en streepjes bevatten (2–40 tekens).' });
+  }
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ error: 'Kies een beheerwachtwoord van minstens 6 tekens.' });
+  }
+  try {
+    await pool.query('INSERT INTO events (slug, name, password_hash) VALUES ($1, $2, $3)', [
+      cleanSlug,
+      cleanName,
+      sha256(password),
+    ]);
+    res.status(201).json({ slug: cleanSlug });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Dit webadres is al in gebruik — kies een ander.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Aanmaken mislukt.' });
+  }
+});
+
+// --- Event-API: alles onder /api/:slug/... ---
+
+const eventApi = express.Router({ mergeParams: true });
+
+app.use(
+  '/api/:slug',
+  async (req, res, next) => {
+    if (!requireDb(res)) return;
+    try {
+      const { rows } = await pool.query('SELECT * FROM events WHERE slug = $1', [
+        String(req.params.slug).toLowerCase(),
+      ]);
+      if (rows.length === 0) return res.status(404).json({ error: 'Onbekende avondvierdaagse.' });
+      req.event = rows[0];
+      next();
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Serverfout.' });
+    }
+  },
+  eventApi
+);
+
+// Publieke configuratie van een event.
+eventApi.get('/config', async (req, res) => {
+  const ev = req.event;
+  let startFinish = null;
+  let vrSettings = null;
+  let eventSetting = null;
+  try {
+    startFinish = await getSetting(ev.id, 'start_finish');
+    vrSettings = await getSetting(ev.id, 'vr_settings');
+    eventSetting = await getSetting(ev.id, 'event');
+  } catch (err) {
+    console.error('Instellingen ophalen mislukt:', err);
+  }
+  res.json({
+    orgName: ev.name,
+    googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+    startFinish,
+    vrSettings,
+    schedule: (eventSetting && eventSetting.days) || null,
+    defaultDay: computeDefaultDay(eventSetting),
+    sponsorOpen: sponsorOpenFor(eventSetting),
+  });
+});
+
+// Wachtwoordcontrole voor de adminpagina.
+eventApi.get('/admin/check', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.status(204).end();
+});
+
+// Adres zoeken voor het start/finish-punt.
+eventApi.get('/admin/geocode', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Geen adres opgegeven.' });
+  try {
+    const data = await throttledNominatim(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=nl&q=${encodeURIComponent(q)}`
+    );
+    if (!data[0]) return res.status(404).json({ error: 'Adres niet gevonden.' });
+    res.json({ lat: Number(data[0].lat), lng: Number(data[0].lon) });
+  } catch (err) {
+    console.error('Geocoderen mislukt:', err);
+    res.status(502).json({ error: 'Adres opzoeken mislukt.' });
+  }
+});
+
+// Start/finish-punt vastleggen.
+eventApi.put('/admin/start-finish', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { lat, lng } = req.body || {};
+  if (typeof lat !== 'number' || typeof lng !== 'number') {
+    return res.status(400).json({ error: 'lat en lng zijn verplicht.' });
+  }
+  try {
+    await setSetting(req.event.id, 'start_finish', { lat, lng });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Start/finish opslaan mislukt.' });
+  }
+});
+
+// Planningsinstellingen (wandeltempo en passeertijd).
+eventApi.put('/admin/vr-settings', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { walkKmh, passMin } = req.body || {};
+  if (![walkKmh, passMin].every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
+    return res.status(400).json({ error: 'Ongeldige planningsinstellingen.' });
+  }
+  try {
+    await setSetting(req.event.id, 'vr_settings', { walkKmh, passMin });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Instellingen opslaan mislukt.' });
+  }
+});
+
+// Datum en starttijd per loopdag.
+eventApi.put('/admin/event-schedule', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { days } = req.body || {};
+  if (!days || typeof days !== 'object') return res.status(400).json({ error: 'Ongeldige planning.' });
+  const cleaned = {};
+  for (const d of [1, 2, 3, 4]) {
+    const entry = days[d] || days[String(d)];
+    if (!entry || !entry.date) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date))) {
+      return res.status(400).json({ error: `Ongeldige datum bij dag ${d}.` });
+    }
+    if (entry.time && !/^\d{2}:\d{2}$/.test(String(entry.time))) {
+      return res.status(400).json({ error: `Ongeldige tijd bij dag ${d}.` });
+    }
+    cleaned[d] = { date: entry.date, time: entry.time || null };
+  }
+  try {
+    await setSetting(req.event.id, 'event', { days: cleaned });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Planning opslaan mislukt.' });
+  }
+});
+
+// Pauzepunt van een dag plaatsen of weghalen.
+eventApi.put('/admin/pause/:day', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { pause } = req.body || {};
+  if (pause !== null && !isValidLatLng(pause)) {
+    return res.status(400).json({ error: 'Ongeldig pauzepunt.' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE day_routes SET pause = $1, updated_at = now() WHERE event_id = $2 AND day = $3',
+      [pause ? JSON.stringify(pause) : null, req.event.id, day]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Publiceer eerst de route van deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Pauzepunt opslaan mislukt.' });
+  }
+});
+
+// Route berekenen via OSRM (voetprofiel, kent alle wandel- en fietspaden).
+eventApi.post('/admin/route', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { profile, points } = req.body || {};
+  const base = OSRM_PROFILES[profile];
+  if (!base) return res.status(400).json({ error: 'Onbekend routeprofiel.' });
+  if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldige routepunten.' });
+  }
+  try {
+    const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+    const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
+    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+      return res.status(422).json({ error: 'Geen route mogelijk via deze punten.' });
+    }
+    const route = data.routes[0];
+    res.json({
+      path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+      distance_m: Math.round(route.distance),
+      duration_s: Math.round(route.duration),
+      legs: route.legs.map((l) => ({
+        distance_m: Math.round(l.distance),
+        duration_s: Math.round(l.duration),
+      })),
+    });
+  } catch (err) {
+    console.error('OSRM-route mislukt:', err);
+    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar, probeer het zo opnieuw.' });
+  }
+});
+
+// Publiek: alle dagroutes.
+eventApi.get('/routes', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT day, waypoints, path, distance_m, crossings, pause, updated_at
+       FROM day_routes WHERE event_id = $1 ORDER BY day`,
+      [req.event.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Routes ophalen mislukt.' });
+  }
+});
+
+// --- Conceptversies: elke wijziging wordt automatisch bewaard ---
+
+eventApi.get('/admin/drafts', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT DISTINCT ON (day) day, waypoints, path, distance_m
+       FROM route_drafts WHERE event_id = $1 ORDER BY day, id DESC`,
+      [req.event.id]
+    );
+    const { rows: counts } = await pool.query(
+      'SELECT day, COUNT(*)::int AS count FROM route_drafts WHERE event_id = $1 GROUP BY day',
+      [req.event.id]
+    );
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        count: (counts.find((c) => c.day === r.day) || { count: 0 }).count,
+      }))
+    );
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Concepten ophalen mislukt.' });
+  }
+});
+
+eventApi.post('/admin/drafts/:day', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { waypoints, path: routePath, distance_m } = req.body;
+  if (!Array.isArray(waypoints) || !waypoints.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldige punten.' });
+  }
+  try {
+    await pool.query(
+      'INSERT INTO route_drafts (event_id, day, waypoints, path, distance_m) VALUES ($1, $2, $3, $4, $5)',
+      [
+        req.event.id,
+        day,
+        JSON.stringify(waypoints),
+        routePath ? JSON.stringify(routePath) : null,
+        distance_m || null,
+      ]
+    );
+    await pool.query(
+      `DELETE FROM route_drafts WHERE event_id = $1 AND day = $2 AND id NOT IN
+       (SELECT id FROM route_drafts WHERE event_id = $1 AND day = $2 ORDER BY id DESC LIMIT 100)`,
+      [req.event.id, day]
+    );
+    const { rows } = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE event_id = $1 AND day = $2',
+      [req.event.id, day]
+    );
+    res.json({ count: rows[0].count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Concept bewaren mislukt.' });
+  }
+});
+
+eventApi.delete('/admin/drafts/:day/latest', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    await pool.query(
+      `DELETE FROM route_drafts WHERE id =
+       (SELECT id FROM route_drafts WHERE event_id = $1 AND day = $2 ORDER BY id DESC LIMIT 1)`,
+      [req.event.id, day]
+    );
+    const { rows } = await pool.query(
+      `SELECT day, waypoints, path, distance_m FROM route_drafts
+       WHERE event_id = $1 AND day = $2 ORDER BY id DESC LIMIT 1`,
+      [req.event.id, day]
+    );
+    const { rows: counts } = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM route_drafts WHERE event_id = $1 AND day = $2',
+      [req.event.id, day]
+    );
+    res.json({ draft: rows[0] || null, count: counts[0].count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Terugdraaien mislukt.' });
+  }
+});
+
+// Route definitief publiceren; conceptversies worden gewist.
+eventApi.put('/routes/:day', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { waypoints, path: routePath, distance_m } = req.body;
+  if (!Array.isArray(waypoints) || waypoints.length < 1 || !waypoints.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Een route heeft minimaal 1 tussenpunt nodig.' });
+  }
+  try {
+    const { rows } = await pool.query(
+      `INSERT INTO day_routes (event_id, day, waypoints, path, distance_m, updated_at)
+       VALUES ($1, $2, $3, $4, $5, now())
+       ON CONFLICT (event_id, day) DO UPDATE
+         SET waypoints = EXCLUDED.waypoints,
+             path = EXCLUDED.path,
+             distance_m = EXCLUDED.distance_m,
+             updated_at = now()
+       RETURNING day, waypoints, path, distance_m, updated_at`,
+      [
+        req.event.id,
+        day,
+        JSON.stringify(waypoints),
+        routePath ? JSON.stringify(routePath) : null,
+        distance_m || null,
+      ]
+    );
+    await pool.query('DELETE FROM route_drafts WHERE event_id = $1 AND day = $2', [req.event.id, day]);
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Route opslaan mislukt.' });
+  }
+});
+
+eventApi.delete('/routes/:day', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    const { rowCount } = await pool.query('DELETE FROM day_routes WHERE event_id = $1 AND day = $2', [
+      req.event.id,
+      day,
+    ]);
+    await pool.query('DELETE FROM route_drafts WHERE event_id = $1 AND day = $2', [req.event.id, day]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Route verwijderen mislukt.' });
+  }
+});
+
+// Route (met concepten, pauzepunt, oversteekpunten en sponsoracties) naar
+// een andere dag verplaatsen; heeft de doeldag al een route, dan wisselen
+// de dagen om. De loopdag-datums blijven bij hun kalenderdag.
+eventApi.post('/admin/move-route', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const from = Number((req.body || {}).from);
+  const to = Number((req.body || {}).to);
+  if (![1, 2, 3, 4].includes(from) || ![1, 2, 3, 4].includes(to) || from === to) {
+    return res.status(400).json({ error: 'Ongeldige dagen.' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: routeRows } = await client.query(
+      'SELECT * FROM day_routes WHERE event_id = $1 AND day IN ($2, $3) FOR UPDATE',
+      [req.event.id, from, to]
+    );
+    await client.query('DELETE FROM day_routes WHERE event_id = $1 AND day IN ($2, $3)', [
+      req.event.id,
+      from,
+      to,
+    ]);
+    for (const r of routeRows) {
+      await client.query(
+        `INSERT INTO day_routes (event_id, day, waypoints, path, distance_m, crossings, pause, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+        [
+          req.event.id,
+          r.day === from ? to : from,
+          JSON.stringify(r.waypoints),
+          r.path ? JSON.stringify(r.path) : null,
+          r.distance_m,
+          r.crossings ? JSON.stringify(r.crossings) : null,
+          r.pause ? JSON.stringify(r.pause) : null,
+        ]
+      );
+    }
+    await client.query(
+      'UPDATE route_drafts SET day = CASE day WHEN $2 THEN $3 ELSE $2 END WHERE event_id = $1 AND day IN ($2, $3)',
+      [req.event.id, from, to]
+    );
+    await client.query(
+      'UPDATE sponsors SET day = CASE day WHEN $2 THEN $3 ELSE $2 END WHERE event_id = $1 AND day IN ($2, $3)',
+      [req.event.id, from, to]
+    );
+    await client.query('COMMIT');
+    res.status(204).end();
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Route verplaatsen mislukt:', err);
+    res.status(500).json({ error: 'Route verplaatsen mislukt.' });
+  } finally {
+    client.release();
+  }
+});
+
+// Oversteekpunten bijwerken (toevoegen, teamtoewijzing, verwijderen).
+eventApi.put('/admin/crossings/:day', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const day = parseDay(req, res);
   if (day === null) return;
@@ -721,8 +740,8 @@ app.put('/api/admin/crossings/:day', async (req, res) => {
   }
   try {
     const { rowCount } = await pool.query(
-      'UPDATE day_routes SET crossings = $1, updated_at = now() WHERE day = $2',
-      [JSON.stringify(crossings), day]
+      'UPDATE day_routes SET crossings = $1, updated_at = now() WHERE event_id = $2 AND day = $3',
+      [JSON.stringify(crossings), req.event.id, day]
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
     res.status(204).end();
@@ -732,13 +751,16 @@ app.put('/api/admin/crossings/:day', async (req, res) => {
   }
 });
 
+// --- Teams ---
+
 const TEAM_COLORS = ['#f97316', '#0ea5e9', '#84cc16', '#e11d48', '#8b5cf6', '#14b8a6', '#a16207', '#64748b'];
 
-// Publiek: teams (de verkeersregelaarsweergave heeft geen wachtwoord).
-app.get('/api/teams', async (req, res) => {
-  if (!requireDb(res)) return;
+eventApi.get('/teams', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT id, name, color, mode FROM teams ORDER BY id');
+    const { rows } = await pool.query(
+      'SELECT id, name, color FROM teams WHERE event_id = $1 ORDER BY id',
+      [req.event.id]
+    );
     res.json(rows);
   } catch (err) {
     console.error(err);
@@ -746,18 +768,19 @@ app.get('/api/teams', async (req, res) => {
   }
 });
 
-app.post('/api/admin/teams', async (req, res) => {
-  if (!requireDb(res)) return;
+eventApi.post('/admin/teams', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
   try {
-    const { rows: countRows } = await pool.query('SELECT COUNT(*)::int AS n FROM teams');
+    const { rows: countRows } = await pool.query(
+      'SELECT COUNT(*)::int AS n FROM teams WHERE event_id = $1',
+      [req.event.id]
+    );
     const color = TEAM_COLORS[countRows[0].n % TEAM_COLORS.length];
-    // Verkeersregelaars fietsen altijd.
     const { rows } = await pool.query(
-      "INSERT INTO teams (name, color, mode) VALUES ($1, $2, 'BICYCLING') RETURNING id, name, color, mode",
-      [name.trim(), color]
+      'INSERT INTO teams (event_id, name, color) VALUES ($1, $2, $3) RETURNING id, name, color',
+      [req.event.id, name.trim(), color]
     );
     res.status(201).json(rows[0]);
   } catch (err) {
@@ -766,34 +789,20 @@ app.post('/api/admin/teams', async (req, res) => {
   }
 });
 
-app.put('/api/admin/teams/:id', async (req, res) => {
-  if (!requireDb(res)) return;
-  if (!requireAdmin(req, res)) return;
-  const { name } = req.body;
-  if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
-  try {
-    const { rows } = await pool.query(
-      'UPDATE teams SET name = $1 WHERE id = $2 RETURNING id, name, color, mode',
-      [name.trim(), req.params.id]
-    );
-    if (rows.length === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Team bijwerken mislukt.' });
-  }
-});
-
-app.delete('/api/admin/teams/:id', async (req, res) => {
-  if (!requireDb(res)) return;
+eventApi.delete('/admin/teams/:id', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const teamId = Number(req.params.id);
   try {
-    const { rowCount } = await pool.query('DELETE FROM teams WHERE id = $1', [teamId]);
+    const { rowCount } = await pool.query('DELETE FROM teams WHERE id = $1 AND event_id = $2', [
+      teamId,
+      req.event.id,
+    ]);
     if (rowCount === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
-    // Toewijzingen aan dit team weghalen uit alle kruisingen (een punt kan
-    // aan één of twee teams zijn toegewezen).
-    const { rows } = await pool.query('SELECT day, crossings FROM day_routes WHERE crossings IS NOT NULL');
+    // Toewijzingen aan dit team weghalen uit alle kruisingen (1 of 2 teams per punt).
+    const { rows } = await pool.query(
+      'SELECT day, crossings FROM day_routes WHERE event_id = $1 AND crossings IS NOT NULL',
+      [req.event.id]
+    );
     for (const row of rows) {
       const cleaned = row.crossings.map((c) => {
         const list = (Array.isArray(c.teams) ? c.teams : c.team != null ? [c.team] : []).filter(
@@ -801,8 +810,9 @@ app.delete('/api/admin/teams/:id', async (req, res) => {
         );
         return { ...c, teams: list, team: list[0] ?? null };
       });
-      await pool.query('UPDATE day_routes SET crossings = $1 WHERE day = $2', [
+      await pool.query('UPDATE day_routes SET crossings = $1 WHERE event_id = $2 AND day = $3', [
         JSON.stringify(cleaned),
+        req.event.id,
         row.day,
       ]);
     }
@@ -813,6 +823,114 @@ app.delete('/api/admin/teams/:id', async (req, res) => {
   }
 });
 
+// --- Sponsoracties ---
+
+eventApi.get('/sponsors', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, day, lat, lng, action FROM sponsors WHERE event_id = $1 ORDER BY id',
+      [req.event.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
+  }
+});
+
+eventApi.post('/sponsors', async (req, res) => {
+  try {
+    const eventSetting = await getSetting(req.event.id, 'event');
+    if (!sponsorOpenFor(eventSetting)) {
+      return res.status(403).json({ error: 'De aanmelding voor sponsoracties is gesloten.' });
+    }
+    const { day, lat, lng, firstName, lastName, email, phone, action } = req.body || {};
+    const dayNum = Number(day);
+    const fields = [firstName, lastName, email, phone, action];
+    if (
+      !Number.isInteger(dayNum) || dayNum < 1 || dayNum > 4 ||
+      !isValidLatLng({ lat, lng }) ||
+      !fields.every((f) => typeof f === 'string' && f.trim().length > 0 && f.length <= 500) ||
+      !/^\S+@\S+\.\S+$/.test(email)
+    ) {
+      return res.status(400).json({ error: 'Vul alle velden in (met een geldig e-mailadres).' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO sponsors (event_id, day, lat, lng, first_name, last_name, email, phone, action)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+      [
+        req.event.id,
+        dayNum,
+        lat,
+        lng,
+        firstName.trim(),
+        lastName.trim(),
+        email.trim(),
+        phone.trim(),
+        action.trim(),
+      ]
+    );
+    res.status(201).json({ id: rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Aanmelden mislukt.' });
+  }
+});
+
+eventApi.get('/admin/sponsors', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, day, lat, lng, first_name, last_name, email, phone, action, created_at
+       FROM sponsors WHERE event_id = $1 ORDER BY day, id`,
+      [req.event.id]
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
+  }
+});
+
+eventApi.delete('/admin/sponsors/:id', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rowCount } = await pool.query('DELETE FROM sponsors WHERE id = $1 AND event_id = $2', [
+      Number(req.params.id),
+      req.event.id,
+    ]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Aanmelding niet gevonden.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Verwijderen mislukt.' });
+  }
+});
+
+// --- Pagina's ---
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'landing.html'));
+});
+
+async function serveEventPage(req, res, file) {
+  const slug = String(req.params.slug).toLowerCase();
+  if (RESERVED_SLUGS.has(slug) || !SLUG_RE.test(slug)) return res.redirect('/');
+  if (pool) {
+    try {
+      const { rows } = await pool.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
+      if (rows.length === 0) return res.redirect('/');
+    } catch {
+      // bij databaseproblemen toch de pagina tonen; de API meldt de fout
+    }
+  }
+  res.sendFile(path.join(__dirname, 'public', file));
+}
+
+app.get('/:slug', (req, res) => serveEventPage(req, res, 'index.html'));
+app.get('/:slug/verkeer', (req, res) => serveEventPage(req, res, 'verkeer.html'));
+app.get('/:slug/admin', (req, res) => serveEventPage(req, res, 'admin.html'));
+app.get('/:slug/print', (req, res) => serveEventPage(req, res, 'print.html'));
 
 initDb()
   .catch((err) => console.error('Database-initialisatie mislukt:', err))

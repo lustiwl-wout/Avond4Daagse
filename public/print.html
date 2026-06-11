@@ -53,15 +53,15 @@
 <body>
   <div class="toolbar no-print">
     <strong>Printversie</strong>
-    Dag: <a href="/print?day=1">1</a> <a href="/print?day=2">2</a>
-    <a href="/print?day=3">3</a> <a href="/print?day=4">4</a>
+    Dag: <a data-day-link="1" href="#">1</a> <a data-day-link="2" href="#">2</a>
+    <a data-day-link="3" href="#">3</a> <a data-day-link="4" href="#">4</a>
     <button onclick="window.print()">Afdrukken</button>
-    <a href="/admin">Naar beheer</a>
+    <a id="admin-link" href="/">Naar beheer</a>
     <span style="font-size:0.8rem;opacity:0.85">Wacht tot alle kaartjes geladen zijn voordat je afdrukt.</span>
   </div>
   <div id="content"><div class="page"><p>Laden…</p></div></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="map-common.js"></script>
-  <script src="print.js"></script>
+  <script src="/map-common.js"></script>
+  <script src="/print.js"></script>
 </body>
 </html>

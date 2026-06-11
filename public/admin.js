@@ -3,7 +3,7 @@
 // Kaart: OpenStreetMap/Leaflet. Wandelroute: OSRM (voetprofiel).
 // Street View: Google (overlay). Start en finish liggen vast; de admin
 // tekent alleen tussenpunten en de wandelroute is altijd lopend.
-const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
+const NL_CENTER = { lat: 52.2, lng: 5.3 };
 const MAX_POINTS = 25;
 
 // Planningsinstellingen (overschreven door opgeslagen waarden uit de database).
@@ -18,7 +18,8 @@ let schedule = null; // per dag {date, time}
 let sponsors = [];
 let sponsorLayers = [];
 let loggedIn = false;
-let password = sessionStorage.getItem('a4d-admin-password') || '';
+const PWD_KEY = `a4d-admin-password-${SLUG}`;
+let password = sessionStorage.getItem(PWD_KEY) || '';
 let startFinish = null;
 let startMarker = null;
 let teams = [];
@@ -62,7 +63,7 @@ async function saveDraft(day) {
   pendingDraft[day] = false;
   const d = days[day];
   try {
-    const res = await fetch(`/api/admin/drafts/${day}`, {
+    const res = await fetch(api(`/admin/drafts/${day}`), {
       method: 'POST',
       headers: adminHeaders(true),
       body: JSON.stringify({ waypoints: d.points, path: d.path, distance_m: d.distanceM }),
@@ -88,7 +89,7 @@ function updateDraftStatus() {
 
 // --- Kaart ---
 async function init() {
-  const res = await fetch('/api/config');
+  const res = await fetch(api('/config'));
   const config = await res.json();
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
@@ -97,7 +98,8 @@ async function init() {
   schedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
 
-  map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
+  document.getElementById('back-link').href = `/${SLUG}`;
+  map = createMap('map', startFinish || NL_CENTER, startFinish ? 15 : 8);
 
   for (let day = 1; day <= 4; day++) {
     days[day] = {
@@ -138,10 +140,10 @@ async function tryLogin(pwd) {
   const status = document.getElementById('login-status');
   status.textContent = 'Controleren…';
   try {
-    const res = await fetch('/api/admin/check', { headers: { 'x-admin-password': pwd } });
+    const res = await fetch(api('/admin/check'), { headers: { 'x-admin-password': pwd } });
     if (res.status === 204) {
       password = pwd;
-      sessionStorage.setItem('a4d-admin-password', pwd);
+      sessionStorage.setItem(PWD_KEY, pwd);
       loggedIn = true;
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('editor').classList.remove('hidden');
@@ -154,7 +156,7 @@ async function tryLogin(pwd) {
     } else {
       const err = await res.json().catch(() => ({}));
       status.textContent = 'Let op: ' + (err.error || 'inloggen mislukt.');
-      sessionStorage.removeItem('a4d-admin-password');
+      sessionStorage.removeItem(PWD_KEY);
     }
   } catch {
     status.textContent = 'Let op: server niet bereikbaar.';
@@ -172,30 +174,38 @@ document.getElementById('admin-password').addEventListener('keydown', (e) => {
 // --- Start & finish (vast punt voor alle dagen) ---
 async function ensureStartFinish() {
   if (!startFinish) {
-    setSaveStatus('Start & finish wordt opgezocht…');
-    try {
-      const cfgRes = await fetch('/api/admin/config', { headers: adminHeaders() });
-      const adminConfig = await cfgRes.json();
-      const geoRes = await fetch(
-        `/api/admin/geocode?q=${encodeURIComponent(adminConfig.startAddress)}`,
-        { headers: adminHeaders() }
-      );
-      if (!geoRes.ok) throw new Error('geocode mislukt');
-      startFinish = await geoRes.json();
-      await saveStartFinish();
-      setSaveStatus('Start & finish automatisch ingesteld.');
-    } catch (err) {
-      console.error('Geocoderen mislukt:', err);
-      startFinish = { ...ALMERE_CENTER };
-      setSaveStatus(
-        'Let op: adres opzoeken lukte niet. Sleep de start/finish-markering naar de juiste plek — dat wordt automatisch bewaard.',
-        true
-      );
-    }
+    startFinish = { ...NL_CENTER };
+    setSaveStatus(
+      'Zet eerst start & finish: zoek hieronder het adres op of sleep de markering naar de juiste plek.',
+      true
+    );
+    placeStartMarker();
+    map.setView([startFinish.lat, startFinish.lng], 8);
+    return;
   }
   placeStartMarker();
   map.setView([startFinish.lat, startFinish.lng], 15);
 }
+
+// Adres zoeken voor start & finish.
+document.getElementById('start-search').addEventListener('click', async () => {
+  const q = document.getElementById('start-address').value.trim();
+  if (!q) return setSaveStatus('Vul eerst een adres in.');
+  setSaveStatus('Adres opzoeken…');
+  const res = await fetch(api(`/admin/geocode?q=${encodeURIComponent(q)}`), {
+    headers: adminHeaders(),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    setSaveStatus('Let op: ' + (err.error || 'adres niet gevonden.'));
+    return;
+  }
+  startFinish = await res.json();
+  await saveStartFinish();
+  placeStartMarker();
+  map.setView([startFinish.lat, startFinish.lng], 16);
+  setSaveStatus('Start & finish gezet — fijnafstellen kan door de markering te slepen.');
+});
 
 function placeStartMarker() {
   if (startMarker) startMarker.remove();
@@ -231,7 +241,7 @@ function placeStartMarker() {
 }
 
 async function saveStartFinish() {
-  await fetch('/api/admin/start-finish', {
+  await fetch(api('/admin/start-finish'), {
     method: 'PUT',
     headers: adminHeaders(true),
     body: JSON.stringify(startFinish),
@@ -349,7 +359,7 @@ function openPointMenu(day, marker) {
 
 // --- Route berekenen via OSRM: altijd lopend, van en naar start/finish ---
 async function osrmRoute(profile, points) {
-  const res = await fetch('/api/admin/route', {
+  const res = await fetch(api('/admin/route'), {
     method: 'POST',
     headers: adminHeaders(true),
     body: JSON.stringify({ profile, points }),
@@ -464,7 +474,7 @@ async function placePause(day, clicked) {
 }
 
 async function savePause(day) {
-  const res = await fetch(`/api/admin/pause/${day}`, {
+  const res = await fetch(api(`/admin/pause/${day}`), {
     method: 'PUT',
     headers: adminHeaders(true),
     body: JSON.stringify({ pause: days[day].pause }),
@@ -539,7 +549,7 @@ function initEventInput() {
       } else {
         delete schedule[day];
       }
-      const res = await fetch('/api/admin/event-schedule', {
+      const res = await fetch(api('/admin/event-schedule'), {
         method: 'PUT',
         headers: adminHeaders(true),
         body: JSON.stringify({ days: schedule }),
@@ -557,7 +567,7 @@ function initEventInput() {
 
 async function loadSponsors() {
   try {
-    const res = await fetch('/api/admin/sponsors', { headers: adminHeaders() });
+    const res = await fetch(api('/admin/sponsors'), { headers: adminHeaders() });
     if (res.ok) sponsors = await res.json();
   } catch {
     sponsors = [];
@@ -605,7 +615,7 @@ function renderSponsors() {
     delBtn.title = 'Aanmelding verwijderen';
     delBtn.addEventListener('click', async () => {
       if (!confirm('Deze sponsoraanmelding verwijderen?')) return;
-      await fetch(`/api/admin/sponsors/${s.id}`, { method: 'DELETE', headers: adminHeaders() });
+      await fetch(api(`/admin/sponsors/${s.id}`), { method: 'DELETE', headers: adminHeaders() });
       sponsors = sponsors.filter((x) => x.id !== s.id);
       renderSponsors();
     });
@@ -754,7 +764,7 @@ async function saveCurrentDay() {
   const d = days[currentDay];
   if (d.points.length < 1) return setSaveStatus('Zet eerst minimaal 1 tussenpunt op de kaart.');
   clearTimeout(draftTimers[currentDay]);
-  const res = await fetch(`/api/routes/${currentDay}`, {
+  const res = await fetch(api(`/routes/${currentDay}`), {
     method: 'PUT',
     headers: adminHeaders(true),
     body: JSON.stringify({ waypoints: d.points, path: d.path, distance_m: d.distanceM }),
@@ -798,7 +808,7 @@ document.getElementById('move-btn').addEventListener('click', async () => {
     ? `Dag ${currentDay} en dag ${target} omwisselen (beide dagen hebben een route)?`
     : `Alles van dag ${currentDay} verplaatsen naar dag ${target}?`;
   if (!confirm(vraag)) return;
-  const res = await fetch('/api/admin/move-route', {
+  const res = await fetch(api('/admin/move-route'), {
     method: 'POST',
     headers: adminHeaders(true),
     body: JSON.stringify({ from: currentDay, to: target }),
@@ -813,12 +823,12 @@ document.getElementById('move-btn').addEventListener('click', async () => {
 });
 
 document.getElementById('print-btn').addEventListener('click', () => {
-  window.open(`/print?day=${currentDay}`, '_blank');
+  window.open(`/${SLUG}/print?day=${currentDay}`, '_blank');
 });
 
 document.getElementById('delete-btn').addEventListener('click', async () => {
   if (!confirm(`Route van dag ${currentDay} verwijderen uit de database?`)) return;
-  const res = await fetch(`/api/routes/${currentDay}`, {
+  const res = await fetch(api(`/routes/${currentDay}`), {
     method: 'DELETE',
     headers: adminHeaders(),
   });
@@ -842,7 +852,7 @@ document.getElementById('delete-btn').addEventListener('click', async () => {
 async function loadSavedRoutes() {
   loadingRoutes = true;
   try {
-    const res = await fetch('/api/routes');
+    const res = await fetch(api('/routes'));
     if (!res.ok) throw new Error();
     const rows = await res.json();
     for (const row of rows) {
@@ -851,7 +861,7 @@ async function loadSavedRoutes() {
       drawPauseMarker(row.day);
       loadDayPoints(row.day, row.waypoints);
     }
-    const draftsRes = await fetch('/api/admin/drafts', { headers: adminHeaders() });
+    const draftsRes = await fetch(api('/admin/drafts'), { headers: adminHeaders() });
     if (draftsRes.ok) {
       for (const draft of await draftsRes.json()) {
         draftCounts[draft.day] = draft.count;
@@ -875,7 +885,7 @@ async function revertLastChange() {
     setSaveStatus('Er zijn geen conceptwijzigingen om terug te draaien.');
     return;
   }
-  const res = await fetch(`/api/admin/drafts/${currentDay}/latest`, {
+  const res = await fetch(api(`/admin/drafts/${currentDay}/latest`), {
     method: 'DELETE',
     headers: adminHeaders(),
   });
@@ -890,7 +900,7 @@ async function revertLastChange() {
     loadDayPoints(currentDay, data.draft.waypoints);
   } else {
     // Geen concepten meer: terug naar de definitieve versie.
-    const pubRes = await fetch('/api/routes');
+    const pubRes = await fetch(api('/routes'));
     const rows = pubRes.ok ? await pubRes.json() : [];
     const row = rows.find((r) => r.day === currentDay);
     loadDayPoints(currentDay, row ? row.waypoints : []);
@@ -917,7 +927,7 @@ document.addEventListener('keydown', (e) => {
 // =====================================================================
 
 async function loadTeams() {
-  const res = await fetch('/api/teams');
+  const res = await fetch(api('/teams'));
   if (res.ok) teams = await res.json();
 }
 
@@ -939,7 +949,7 @@ function initSettingsInputs() {
       const value = Number(input.value);
       if (!Number.isFinite(value) || value < 0) return;
       vrSettings[key] = value;
-      await fetch('/api/admin/vr-settings', {
+      await fetch(api('/admin/vr-settings'), {
         method: 'PUT',
         headers: adminHeaders(true),
         body: JSON.stringify(vrSettings),
@@ -1037,7 +1047,7 @@ async function addManualCrossing(clicked) {
 }
 
 async function saveCrossings(day) {
-  const res = await fetch(`/api/admin/crossings/${day}`, {
+  const res = await fetch(api(`/admin/crossings/${day}`), {
     method: 'PUT',
     headers: adminHeaders(true),
     body: JSON.stringify({ crossings: days[day].crossings }),
@@ -1195,7 +1205,7 @@ function renderTeams() {
     delBtn.title = 'Team verwijderen';
     delBtn.addEventListener('click', async () => {
       if (!confirm(`Team "${t.name}" verwijderen?`)) return;
-      await fetch(`/api/admin/teams/${t.id}`, { method: 'DELETE', headers: adminHeaders() });
+      await fetch(api(`/admin/teams/${t.id}`), { method: 'DELETE', headers: adminHeaders() });
       teams = teams.filter((x) => x.id !== t.id);
       for (let day = 1; day <= 4; day++) {
         days[day].crossings.forEach((c) => {
@@ -1216,7 +1226,7 @@ document.getElementById('add-team-btn').addEventListener('click', async () => {
   const input = document.getElementById('team-name');
   const name = input.value.trim();
   if (!name) return setVrStatus('Geef het team eerst een naam.');
-  const res = await fetch('/api/admin/teams', {
+  const res = await fetch(api('/admin/teams'), {
     method: 'POST',
     headers: adminHeaders(true),
     body: JSON.stringify({ name }),

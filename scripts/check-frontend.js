@@ -67,7 +67,7 @@ function buildSandbox() {
     JSON,
     Promise,
     document: documentStub,
-    location: { search: '', href: 'http://localhost/' },
+    location: { search: '', href: 'http://localhost/syncope/', pathname: '/syncope/', origin: 'http://localhost' },
     navigator: { geolocation: { watchPosition: () => 1, clearWatch() {} } },
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
     alert() {},
@@ -91,6 +91,7 @@ function buildSandbox() {
 }
 
 const pages = {
+  'landing.js': ['landing.js'],
   'app.js': ['map-common.js', 'gps.js', 'app.js'],
   'verkeer.js': ['map-common.js', 'gps.js', 'verkeer.js'],
   'admin.js': ['map-common.js', 'gps.js', 'admin.js'],

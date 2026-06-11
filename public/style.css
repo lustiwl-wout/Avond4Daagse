@@ -407,3 +407,16 @@ details > *:not(summary) { margin-top: 0.5rem; }
   button, select { min-height: 42px; }
   #day-tabs .day-tab, #mode-tabs .mode-tab { min-height: 38px; }
 }
+
+/* --- Contact --- */
+.contact-footer {
+  margin-top: auto;
+  padding: 0.8rem 1rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  background: var(--card);
+}
+.contact-footer a, .contact-line a { color: var(--brand); font-weight: 600; }
+.contact-line { border-top: 1px solid var(--line); padding-top: 0.7rem; }
