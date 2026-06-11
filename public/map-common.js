@@ -268,11 +268,7 @@ async function openStreetView(lat, lng) {
     }
   }
   if (!pano) {
-    // Achtervang: Google Maps zelf toont ook beelden (zoals photospheres)
-    // die de Street View-service hier niet teruggeeft.
-    if (confirm('Er is geen beeld dichtbij dit punt. Deze plek op Google Maps bekijken?')) {
-      window.open(`https://www.google.com/maps?layer=c&cbll=${lat},${lng}`, '_blank');
-    }
+    alert('Op dit punt is geen Street View-beeld beschikbaar.');
     return;
   }
 
