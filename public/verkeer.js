@@ -7,6 +7,7 @@ let map;
 let selectedDay = 1;
 let selectedTeam = 'all';
 let startFinish = null;
+let eventSchedule = null; // per dag {date, time}
 let teams = [];
 let teamRoutes = {}; // `${teamId}_${day}` -> { path, conflicts, timing }
 const walkRoutes = {}; // day -> { line, bounds, crossings }
@@ -19,6 +20,7 @@ async function init() {
   const config = await res.json();
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
+  eventSchedule = config.schedule || null;
   // Standaard de eerstvolgende loopdag tonen.
   selectedDay = Number(config.defaultDay || 1);
   document.querySelectorAll('.day-tab').forEach((tab) => {
@@ -228,11 +230,24 @@ function renderSchedule(teamFilter) {
   }
   tr.timing.schedule.forEach((post, i) => {
     const li = document.createElement('li');
-    const arrive = post.arriveMin != null ? ` · jij er: +${post.arriveMin} min` : '';
+    const arrive =
+      post.arriveMin != null ? ` · jullie aankomst: ${fmtMoment(post.arriveMin)}` : '';
     li.innerHTML = `<span><strong>Post ${i + 1}:</strong> ${post.name}<br>
-      <span class="route-meta">groep: +${post.headMin} min · weg mogen: +${post.leaveMin} min${arrive}</span></span>`;
+      <span class="route-meta">stoet komt aan: ${fmtMoment(post.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(post.leaveMin)}${arrive}</span></span>`;
     list.appendChild(li);
   });
+}
+
+// Tijdstip als kloktijd (als de starttijd van de dag bekend is), anders in
+// minuten na de start.
+function fmtMoment(min) {
+  const e = eventSchedule && eventSchedule[selectedDay];
+  if (e && e.time) {
+    const [h, m] = e.time.split(':').map(Number);
+    const total = h * 60 + m + Math.round(min);
+    return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  }
+  return `+${min} min`;
 }
 
 setupGps(() => map);

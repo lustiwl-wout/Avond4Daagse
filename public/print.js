@@ -6,6 +6,7 @@ const params = new URLSearchParams(location.search);
 const day = Math.min(4, Math.max(1, Number(params.get('day')) || 1));
 
 let svStaticKey = '';
+let eventSchedule = null; // per dag {date, time}
 let vrSettings = { walkKmh: 4, passMin: 8, bikeKmh: 15, marginMin: 2 };
 let startFinish = null;
 let teams = [];
@@ -20,6 +21,18 @@ const r1 = (n) => Math.round(n * 10) / 10;
 const headMin = (alongM) => (alongM / 1000 / vrSettings.walkKmh) * 60;
 const leaveMin = (alongM) => headMin(alongM) + vrSettings.passMin;
 
+// Tijdstip als kloktijd (als de starttijd van de dag bekend is), anders in
+// minuten na de start.
+function fmtMoment(min) {
+  const e = eventSchedule && eventSchedule[day];
+  if (e && e.time) {
+    const [h, m] = e.time.split(':').map(Number);
+    const total = h * 60 + m + Math.round(min);
+    return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+  }
+  return `+${min} min`;
+}
+
 async function init() {
   const [cfgRes, routesRes, teamsRes, trRes] = await Promise.all([
     fetch('/api/config'),
@@ -30,6 +43,7 @@ async function init() {
   const config = await cfgRes.json();
   svStaticKey = config.googleMapsApiKey || '';
   startFinish = config.startFinish;
+  eventSchedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
   if (teamsRes.ok) teams = await teamsRes.json();
   if (trRes.ok) {
@@ -65,7 +79,7 @@ function render() {
       passeertijd stoet ${vrSettings.passMin} min · tijden in minuten na vertrek bij start/finish</p>
     <div class="pmap pmap-lg" id="map-overview"></div>
     <table>
-      <tr><th>Post</th><th>Plek</th><th>Groep er</th><th>Weg mogen</th><th>Team</th></tr>
+      <tr><th>Post</th><th>Plek</th><th>Stoet komt aan</th><th>Stoet voorbij (vertrek kan)</th><th>Team</th></tr>
       ${posts
         .map((p) => {
           const assigned = crossingTeams(p)
@@ -77,7 +91,7 @@ function render() {
                   .map((t) => `<span class="dot" style="background:${t.color}"></span>${esc(t.name)}`)
                   .join(' + ')
               : '<span class="warn">NOG NIET TOEGEWEZEN</span>';
-          return `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>+${p.headMin} min</td><td>+${p.leaveMin} min</td><td>${team}</td></tr>`;
+          return `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>${fmtMoment(p.headMin)}</td><td>${fmtMoment(p.leaveMin)}</td><td>${team}</td></tr>`;
         })
         .join('')}
     </table>
@@ -102,11 +116,11 @@ function render() {
       ${teamPosts
         .map((p, i) => {
           const sched = schedule[i] || {};
-          const arrive = sched.arriveMin != null ? ` · jullie er: +${sched.arriveMin} min` : '';
+          const arrive = sched.arriveMin != null ? ` · jullie aankomst: ${fmtMoment(sched.arriveMin)}` : '';
           return `<div class="post">
             <h3>Post ${p.nr} — ${esc(p.name)}</h3>
             <p class="addr" data-post="${p.nr}">Adres wordt opgezocht…</p>
-            <p class="times">Groep er: +${p.headMin} min · weg mogen: +${p.leaveMin} min${arrive}</p>
+            <p class="times">Stoet komt aan: ${fmtMoment(p.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(p.leaveMin)}${arrive}</p>
             <div class="post-media">
               <figure>
                 <div class="pmap pmap-sm" id="map-post-${team.id}-${p.nr}"></div>
@@ -131,8 +145,8 @@ function render() {
   if (unassigned.length > 0) {
     html += `<div class="page">
       <h2 class="warn">Nog niet toegewezen posten</h2>
-      <table><tr><th>Post</th><th>Plek</th><th>Groep er</th></tr>
-      ${unassigned.map((p) => `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>+${p.headMin} min</td></tr>`).join('')}
+      <table><tr><th>Post</th><th>Plek</th><th>Stoet komt aan</th></tr>
+      ${unassigned.map((p) => `<tr><td>${p.nr}</td><td>${esc(p.name)}</td><td>${fmtMoment(p.headMin)}</td></tr>`).join('')}
       </table>
     </div>`;
   }
