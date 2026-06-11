@@ -13,6 +13,18 @@ const port = process.env.PORT || 3000;
 // elk event — handig voor de platformbeheerder.
 
 app.use(express.json());
+
+// De server luistert direct; de database-initialisatie loopt op de
+// achtergrond (zie onderaan). API-verzoeken wachten hier tot die klaar is.
+let dbReady = false;
+let dbInit = Promise.resolve();
+app.use(async (req, res, next) => {
+  // /api/version blijft altijd direct bereikbaar (diagnose).
+  if (!dbReady && pool && req.path.startsWith('/api/') && req.path !== '/api/version') {
+    await dbInit.catch(() => {});
+  }
+  next();
+});
 // index: false — '/' beslist zelf (landing of, op een subdomein, het event).
 // Cache-Control: no-cache — de browser mag bestanden bewaren maar moet ze
 // bij elke paginalading even bij de server controleren (ETag). Zonder dit
@@ -38,6 +50,9 @@ if (process.env.DATABASE_URL) {
   pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: local ? false : { rejectUnauthorized: false },
+    // Nooit eindeloos op een verbinding wachten (standaard wacht pg voor
+    // altijd — daardoor kon een deploy blijven hangen op "Deploying").
+    connectionTimeoutMillis: 10000,
   });
 } else {
   console.warn('DATABASE_URL is niet gezet — opslaan werkt niet.');
@@ -1211,8 +1226,14 @@ app.get('/:slug/admin', (req, res) => serveEventPage(req, res, 'admin.html'));
 app.get('/:slug/print', (req, res) => serveEventPage(req, res, 'print.html'));
 app.get('/:slug/simulate', (req, res) => serveEventPage(req, res, 'index.html'));
 
-initDb()
-  .catch((err) => console.error('Database-initialisatie mislukt:', err))
-  .finally(() => {
-    app.listen(port, () => console.log(`Avond4Daagse routeplanner draait op poort ${port}`));
-  });
+// Direct luisteren — Render zet een deploy pas live zodra de poort open is,
+// dus de (soms trage) database-initialisatie mag dat niet blokkeren.
+// API-verzoeken wachten via de middleware bovenin tot de database klaar is.
+dbInit = initDb()
+  .then(() => {
+    dbReady = true;
+    console.log('Database klaar.');
+  })
+  .catch((err) => console.error('Database-initialisatie mislukt:', err));
+
+app.listen(port, () => console.log(`Avond4Daagse routeplanner draait op poort ${port}`));
