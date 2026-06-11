@@ -112,7 +112,7 @@ function showAnnouncement(text) {
 // van de eerstvolgende loopdag (Open-Meteo, zonder key). We kijken naar
 // de uurlijkse regenkans vanaf de starttijd tot ~3 uur erna — een natte
 // ochtend telt dus niet mee.
-const RAIN_WARN_PCT = 50;
+const RAIN_WARN_PCT = 60;
 
 async function loadRainNotice(day) {
   const e = schedule && schedule[day];
