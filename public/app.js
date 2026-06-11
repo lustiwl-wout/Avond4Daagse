@@ -327,12 +327,49 @@ function fmtDist(m) {
   return m < 950 ? `${Math.max(0, Math.round(m / 50) * 50)} m` : `${(m / 1000).toFixed(1).replace('.', ',')} km`;
 }
 
+// Het gelopen deel van het pad, van de start tot `along` meter.
+function pathUpTo(path, along) {
+  const pts = [[path[0].lat, path[0].lng]];
+  let cum = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const seg = distM(path[i], path[i + 1]);
+    if (cum + seg >= along) {
+      const t = seg > 0 ? (along - cum) / seg : 0;
+      pts.push([
+        path[i].lat + (path[i + 1].lat - path[i].lat) * t,
+        path[i].lng + (path[i + 1].lng - path[i].lng) * t,
+      ]);
+      return pts;
+    }
+    cum += seg;
+    pts.push([path[i + 1].lat, path[i + 1].lng]);
+  }
+  return pts;
+}
+
+// Witte halfdoorzichtige lijn óver het gelopen deel: dimt de routekleur,
+// zodat je op de kaart ziet wat er al achter je ligt.
+let walkedLine = null;
+
+function updateWalkedLine(path, along) {
+  if (along === null) {
+    if (walkedLine) walkedLine.remove();
+    walkedLine = null;
+    return;
+  }
+  if (!walkedLine) {
+    walkedLine = L.polyline([], { color: '#ffffff', weight: 5, opacity: 0.65, interactive: false }).addTo(map);
+  }
+  walkedLine.setLatLngs(pathUpTo(path, along));
+}
+
 function updateProgress(pos) {
   const box = document.getElementById('route-progress');
   const r = routes[selectedDay];
   if (!pos || !r) {
     box.classList.add('hidden');
     progressAlong = null;
+    updateWalkedLine(null, null);
     return;
   }
   const along = routeProgress(r.path, pos);
@@ -340,9 +377,11 @@ function updateProgress(pos) {
     // Naast de route (bv. onderweg ernaartoe): geen voortgang tonen.
     box.classList.add('hidden');
     progressAlong = null;
+    updateWalkedLine(null, null);
     return;
   }
   progressAlong = along;
+  updateWalkedLine(r.path, along);
   const left = Math.max(0, r.total - along);
   const pct = Math.min(100, Math.round((along / r.total) * 100));
   document.getElementById('progress-fill').style.width = pct + '%';
