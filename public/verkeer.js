@@ -1,60 +1,38 @@
 // Verkeersregelaarspagina (/verkeer): kies je team, zie je posten, je
 // fietsroute en je tijdschema, en volg jezelf met GPS. Geen wachtwoord nodig.
+// Kaart en routes via OpenStreetMap/Leaflet; Street View via Google (overlay).
 const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
-const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
-const DIAMOND = 'M 0 -1 L 1 0 L 0 1 L -1 0 Z';
 
 let map;
-let infoWindow;
 let selectedDay = 1;
 let selectedTeam = 'all';
 let startFinish = null;
 let teams = [];
 let teamRoutes = {}; // `${teamId}_${day}` -> { path, conflicts, timing }
-const walkRoutes = {}; // day -> { polyline, bounds, crossings }
-let vrMarkers = [];
-let vrPolylines = [];
+const walkRoutes = {}; // day -> { line, bounds, crossings }
+let vrLayers = [];
 
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
-async function loadGoogleMaps() {
+async function init() {
   const res = await fetch('/api/config');
   const config = await res.json();
-  if (!config.googleMapsApiKey) {
-    document.getElementById('map').innerHTML =
-      '<p style="padding:2rem">Let op: Geen Google Maps API-key geconfigureerd.</p>';
-    return;
-  }
+  setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
-  const script = document.createElement('script');
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${config.googleMapsApiKey}&callback=initMap`;
-  script.async = true;
-  document.head.appendChild(script);
-}
 
-window.initMap = async function () {
-  map = new google.maps.Map(document.getElementById('map'), {
-    center: startFinish || ALMERE_CENTER,
-    zoom: startFinish ? 15 : 13,
-    streetViewControl: true,
-    mapTypeControl: false,
-    fullscreenControl: true,
-  });
-  infoWindow = new google.maps.InfoWindow();
+  map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
 
   if (startFinish) {
-    new google.maps.Marker({
-      position: startFinish,
-      map,
-      title: 'Start & finish',
+    L.marker([startFinish.lat, startFinish.lng], {
       icon: flagIcon(),
-      zIndex: 999,
-    });
+      zIndexOffset: 900,
+      title: 'Start & finish',
+    }).addTo(map);
   }
 
   await loadData();
   refreshView();
-};
+}
 
 async function loadData() {
   try {
@@ -67,17 +45,13 @@ async function loadData() {
       for (const row of await routesRes.json()) {
         const path = (row.path && row.path.length > 1 ? row.path : row.waypoints) || [];
         if (path.length < 2) continue;
-        const bounds = new google.maps.LatLngBounds();
-        path.forEach((p) => bounds.extend(p));
         walkRoutes[row.day] = {
-          polyline: new google.maps.Polyline({
-            path,
-            map: null,
-            strokeColor: DAY_COLORS[row.day],
-            strokeWeight: 5,
-            strokeOpacity: 0.85,
+          line: L.polyline(path.map((p) => [p.lat, p.lng]), {
+            color: DAY_COLORS[row.day],
+            weight: 5,
+            opacity: 0.85,
           }),
-          bounds,
+          bounds: boundsOf(path),
           crossings: (row.crossings || []).filter((c) => !c.hidden),
         };
       }
@@ -89,7 +63,7 @@ async function loadData() {
       }
     }
   } catch {
-    document.getElementById('vr-warning').textContent = 'Let op: Gegevens laden mislukt.';
+    document.getElementById('vr-warning').textContent = 'Let op: gegevens laden mislukt.';
   }
 
   const select = document.getElementById('vr-team');
@@ -120,12 +94,12 @@ document.getElementById('vr-team').addEventListener('change', (e) => {
 });
 
 function refreshView() {
-  vrMarkers.forEach((m) => m.setMap(null));
-  vrMarkers = [];
-  vrPolylines.forEach((p) => p.setMap(null));
-  vrPolylines = [];
+  vrLayers.forEach((l) => l.remove());
+  vrLayers = [];
   for (let day = 1; day <= 4; day++) {
-    if (walkRoutes[day]) walkRoutes[day].polyline.setMap(day === selectedDay ? map : null);
+    if (!walkRoutes[day]) continue;
+    if (day === selectedDay) walkRoutes[day].line.addTo(map);
+    else walkRoutes[day].line.remove();
   }
   const warningEl = document.getElementById('vr-warning');
   warningEl.textContent = '';
@@ -136,7 +110,7 @@ function refreshView() {
     renderSchedule(null);
     return;
   }
-  map.fitBounds(route.bounds, 40);
+  map.fitBounds(route.bounds.pad(0.07));
   if (route.crossings.length === 0) {
     warningEl.textContent = 'Er zijn nog geen oversteekpunten gepubliceerd voor deze dag.';
   }
@@ -148,23 +122,14 @@ function refreshView() {
     index++;
     const team = c.team != null ? teamById(c.team) : null;
     const isMine = teamFilter === null || c.team === teamFilter;
-    const marker = new google.maps.Marker({
-      position: { lat: c.lat, lng: c.lng },
-      map,
+    const marker = L.marker([c.lat, c.lng], {
+      icon: diamondIcon(team ? team.color : '#f59e0b', index, !isMine),
+      zIndexOffset: 500,
       title: c.name,
-      icon: {
-        path: DIAMOND,
-        scale: 9,
-        fillColor: team ? team.color : '#f59e0b',
-        fillOpacity: isMine ? 1 : 0.3,
-        strokeColor: '#fff',
-        strokeWeight: 2,
-      },
-      label: { text: String(index), color: '#fff', fontSize: '10px', fontWeight: 'bold' },
-      zIndex: 500,
-    });
-    marker.addListener('click', () => openCrossingInfo(c, team, marker));
-    vrMarkers.push(marker);
+    }).addTo(map);
+    const nr = index;
+    marker.on('click', () => openCrossingInfo(c, team, nr));
+    vrLayers.push(marker);
   }
 
   const warnings = [];
@@ -172,45 +137,21 @@ function refreshView() {
     if (teamFilter !== null && t.id !== teamFilter) continue;
     const tr = teamRoutes[`${t.id}_${selectedDay}`];
     if (!tr || !tr.path) continue;
-    vrPolylines.push(
-      new google.maps.Polyline({
-        path: tr.path,
-        map,
-        strokeOpacity: 0,
-        zIndex: 400,
-        icons: [
-          {
-            icon: { path: 'M 0,-1 0,1', strokeOpacity: 1, strokeColor: t.color, strokeWeight: 3, scale: 3 },
-            offset: '0',
-            repeat: '14px',
-          },
-        ],
-      })
-    );
+    vrLayers.push(dashedLine(tr.path, t.color).addTo(map));
 
     const open = (tr.conflicts || []).filter((c) => !c.approved);
     if (open.length > 0) {
-      warnings.push(`Let op: Route van ${t.name} doorkruist de wandelroute op ${open.length} plek(ken)!`);
+      warnings.push(`Route van ${t.name} doorkruist de wandelroute op ${open.length} plek(ken)!`);
     }
     for (const conflict of tr.conflicts || []) {
-      vrMarkers.push(
-        new google.maps.Marker({
-          position: conflict,
-          map,
+      vrLayers.push(
+        L.marker([conflict.lat, conflict.lng], {
+          icon: conflictIcon(!!conflict.approved),
+          zIndexOffset: 1100,
           title: conflict.approved
             ? `Let op (${t.name}): hier steek je de wandelroute over — stap af en kijk uit!`
             : `Conflict: route van ${t.name} kruist de wandelroute`,
-          label: { text: conflict.approved ? '✓' : '!', color: '#fff', fontWeight: 'bold' },
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 11,
-            fillColor: conflict.approved ? '#ca8a04' : '#dc2626',
-            fillOpacity: 1,
-            strokeColor: '#fff',
-            strokeWeight: 2,
-          },
-          zIndex: 1001,
-        })
+        }).addTo(map)
       );
     }
     if (tr.timing && tr.timing.feasible === false) {
@@ -221,27 +162,22 @@ function refreshView() {
   renderSchedule(teamFilter);
 }
 
-function openCrossingInfo(c, team, marker) {
+function openCrossingInfo(c, team, nr) {
   const div = document.createElement('div');
   div.className = 'point-menu';
   const title = document.createElement('strong');
-  title.textContent = `${c.name}`;
+  title.textContent = `Post ${nr}: ${c.name}`;
   div.appendChild(title);
   const teamLine = document.createElement('span');
   teamLine.textContent = team ? `Team: ${team.name}` : 'Nog geen team toegewezen';
   div.appendChild(teamLine);
-  const svBtn = document.createElement('button');
-  svBtn.textContent = 'Bekijk in Street View';
-  svBtn.addEventListener('click', () => {
-    infoWindow.close();
-    const pano = map.getStreetView();
-    pano.setPosition({ lat: c.lat, lng: c.lng });
-    pano.setPov({ heading: 0, pitch: 0 });
-    pano.setVisible(true);
-  });
-  div.appendChild(svBtn);
-  infoWindow.setContent(div);
-  infoWindow.open({ anchor: marker, map });
+  div.appendChild(
+    menuButton('Bekijk in Street View', () => {
+      map.closePopup();
+      openStreetView(c.lat, c.lng);
+    })
+  );
+  openMapMenu(map, [c.lat, c.lng], div);
 }
 
 // Tijdschema voor het gekozen team: wanneer komt de groep, wanneer mag je weg.
@@ -267,4 +203,4 @@ function renderSchedule(teamFilter) {
 }
 
 setupGps(() => map);
-loadGoogleMaps();
+init();

@@ -362,6 +362,117 @@ app.delete('/api/routes/:day', async (req, res) => {
   }
 });
 
+// --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
+
+const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (schoolproject basisschool Almere)';
+const OSRM_PROFILES = {
+  foot: 'https://routing.openstreetmap.de/routed-foot',
+  bike: 'https://routing.openstreetmap.de/routed-bike',
+};
+
+// Route berekenen via OSRM (de router van openstreetmap.org): kent alle
+// voet- en fietspaden. De wandelroute gebruikt 'foot', teamroutes 'bike'.
+app.post('/api/admin/route', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const { profile, points } = req.body || {};
+  const base = OSRM_PROFILES[profile];
+  if (!base) return res.status(400).json({ error: 'Onbekend routeprofiel.' });
+  if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
+    return res.status(400).json({ error: 'Ongeldige routepunten.' });
+  }
+  try {
+    const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+    const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
+    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
+      return res.status(422).json({ error: 'Geen route mogelijk via deze punten.' });
+    }
+    const route = data.routes[0];
+    res.json({
+      path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+      distance_m: Math.round(route.distance),
+      duration_s: Math.round(route.duration),
+      legs: route.legs.map((l) => ({
+        distance_m: Math.round(l.distance),
+        duration_s: Math.round(l.duration),
+      })),
+    });
+  } catch (err) {
+    console.error('OSRM-route mislukt:', err);
+    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar, probeer het zo opnieuw.' });
+  }
+});
+
+// Nominatim (OpenStreetMap-geocoding) met nette throttling (max ~1 verzoek
+// per seconde, zoals hun gebruiksvoorwaarden vragen) en een cache.
+const geoCache = new Map();
+let geoChain = Promise.resolve();
+let lastGeoCall = 0;
+
+function throttledNominatim(url) {
+  const call = geoChain.then(async () => {
+    const wait = Math.max(0, 1100 - (Date.now() - lastGeoCall));
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    lastGeoCall = Date.now();
+    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    if (!resp.ok) throw new Error(`Nominatim gaf status ${resp.status}`);
+    return resp.json();
+  });
+  geoChain = call.catch(() => {});
+  return call;
+}
+
+// Adres opzoeken voor het vaste start/finish-punt (alleen admin).
+app.get('/api/admin/geocode', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Geen adres opgegeven.' });
+  try {
+    const data = await throttledNominatim(
+      `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=nl&q=${encodeURIComponent(q)}`
+    );
+    if (!data[0]) return res.status(404).json({ error: 'Adres niet gevonden.' });
+    res.json({ lat: Number(data[0].lat), lng: Number(data[0].lon) });
+  } catch (err) {
+    console.error('Geocoderen mislukt:', err);
+    res.status(502).json({ error: 'Adres opzoeken mislukt.' });
+  }
+});
+
+// Adres bij een punt (publiek, voor de printversie en puntnamen) — gecachet.
+app.get('/api/address', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'Ongeldige coördinaten.' });
+  }
+  const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+  if (geoCache.has(key)) return res.json(geoCache.get(key));
+  try {
+    const data = await throttledNominatim(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&accept-language=nl`
+    );
+    const a = data.address || {};
+    const road = a.road || a.pedestrian || a.cycleway || a.footway || '';
+    const address =
+      [
+        [road, a.house_number].filter(Boolean).join(' '),
+        a.suburb || a.neighbourhood || a.quarter,
+        a.city || a.town || a.village,
+      ]
+        .filter(Boolean)
+        .join(', ') ||
+      (data.display_name || 'Onbekend adres').split(',').slice(0, 3).join(',');
+    const out = { address, road };
+    geoCache.set(key, out);
+    res.json(out);
+  } catch (err) {
+    console.error('Adres opzoeken mislukt:', err);
+    res.status(502).json({ error: 'Adres opzoeken mislukt.' });
+  }
+});
+
 // --- Verkeersregelaars: kruisingdetectie, teams en teamroutes ---
 
 // Wegtypen waar verkeer kan rijden (auto's, fietsen, bussen).
@@ -391,7 +502,7 @@ async function fetchOsmWays(walkPath) {
     try {
       const resp = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': OSM_UA },
         body: 'data=' + encodeURIComponent(query),
       });
       if (resp.ok) {

@@ -4,16 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Printversie verkeersregelaarsplan — Avond4Daagse Syncope</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #111; margin: 0; }
     .toolbar {
-      position: sticky; top: 0; background: #1d4ed8; color: #fff;
-      padding: 0.6rem 1rem; display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;
+      position: sticky; top: 0; background: #2ba59a; color: #fff;
+      padding: 0.6rem 1rem; display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap; z-index: 1500;
     }
     .toolbar a, .toolbar button { font-size: 0.9rem; }
     .toolbar a { color: #fff; }
-    .toolbar button { padding: 0.4rem 0.8rem; border-radius: 6px; border: none; cursor: pointer; }
+    .toolbar button { padding: 0.4rem 0.8rem; border-radius: 999px; border: none; cursor: pointer; }
     .page { padding: 1.5rem 2rem; page-break-after: always; max-width: 60rem; margin: 0 auto; }
     h1 { font-size: 1.4rem; margin: 0 0 0.2rem; }
     h2 { font-size: 1.2rem; margin: 0 0 0.5rem; }
@@ -21,21 +22,30 @@
     .sub { color: #555; margin: 0 0 1rem; font-size: 0.9rem; }
     table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin: 0.8rem 0; }
     th, td { border: 1px solid #bbb; padding: 0.3rem 0.5rem; text-align: left; }
-    th { background: #eef2ff; }
+    th { background: #e8f5f3; }
     .dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: baseline; }
-    .overview-map, .team-map { width: 100%; max-width: 56rem; border: 1px solid #ccc; border-radius: 6px; }
+    .pmap { border: 1px solid #ccc; border-radius: 6px; }
+    .pmap-lg { width: 100%; height: 430px; }
+    .pmap-team { width: 100%; height: 380px; }
+    .pmap-sm { width: 300px; height: 200px; }
     .post { border: 1px solid #ccc; border-radius: 8px; padding: 0.8rem 1rem; margin: 0.8rem 0; break-inside: avoid; }
     .post .addr { font-weight: 600; margin: 0.1rem 0; }
     .post .times { color: #444; font-size: 0.85rem; margin: 0.1rem 0 0.5rem; }
     .post-media { display: flex; gap: 6px; flex-wrap: wrap; }
     .post-media figure { margin: 0; }
     .post-media img { border: 1px solid #ccc; border-radius: 4px; display: block; }
-    .post-media figcaption { font-size: 0.7rem; color: #555; text-align: center; }
+    .post-media figcaption { font-size: 0.7rem; color: #555; text-align: center; max-width: 300px; }
     .warn { color: #b91c1c; font-weight: 600; }
-    .ok { color: #15803d; font-weight: 600; }
+    /* Markers op de printkaartjes */
+    .m-dot {
+      width: 24px; height: 24px; border-radius: 50%; border: 2px solid #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.4); color: #fff; font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
     @media print {
       .no-print { display: none !important; }
       .page { padding: 0.5rem 0; }
+      .pmap { break-inside: avoid; }
     }
   </style>
 </head>
@@ -45,9 +55,12 @@
     Dag: <a href="/print?day=1">1</a> <a href="/print?day=2">2</a>
     <a href="/print?day=3">3</a> <a href="/print?day=4">4</a>
     <button onclick="window.print()">Afdrukken</button>
-    <a href="/admin">← naar beheer</a>
+    <a href="/admin">Naar beheer</a>
+    <span style="font-size:0.8rem;opacity:0.85">Wacht tot alle kaartjes geladen zijn voordat je afdrukt.</span>
   </div>
   <div id="content"><div class="page"><p>Laden…</p></div></div>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="map-common.js"></script>
   <script src="print.js"></script>
 </body>
 </html>

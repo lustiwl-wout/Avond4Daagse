@@ -1,74 +1,47 @@
-// Bezoekerspagina: toont de routes van dag 1 t/m 4 en volgt je met GPS.
-// Alle routes starten en eindigen op het vaste start/finish-punt.
+// Bezoekerspagina: toont de routes van dag 1 t/m 4 (OpenStreetMap/Leaflet)
+// en volgt je met GPS. Alle routes starten en eindigen op het vaste
+// start/finish-punt. Street View loopt via Google (overlay).
 const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
-const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 
 let map;
-let infoWindow;
 let selectedDay = 'all';
 let startFinish = null;
-const routes = {}; // day -> { polyline, bounds, distance_m }
+const routes = {}; // day -> { line, bounds, distance_m }
 
-// Op een groot scherm de uitleg standaard openklappen; op mobiel dichtgeklapt
-// zodat de kaart de ruimte krijgt.
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
-async function loadGoogleMaps() {
+async function init() {
   const res = await fetch('/api/config');
   const config = await res.json();
-  if (!config.googleMapsApiKey) {
-    document.getElementById('map').innerHTML =
-      '<p style="padding:2rem">Let op: Geen Google Maps API-key geconfigureerd. Zet de omgevingsvariabele <code>GOOGLE_MAPS_API_KEY</code>.</p>';
-    return;
-  }
+  setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
-  const script = document.createElement('script');
-  script.src = `https://maps.googleapis.com/maps/api/js?key=${config.googleMapsApiKey}&callback=initMap`;
-  script.async = true;
-  document.head.appendChild(script);
-}
 
-window.initMap = async function () {
-  map = new google.maps.Map(document.getElementById('map'), {
-    center: startFinish || ALMERE_CENTER,
-    zoom: startFinish ? 15 : 13,
-    streetViewControl: true, // het gele poppetje voor Street View
-    mapTypeControl: false,
-    fullscreenControl: true,
-  });
-  infoWindow = new google.maps.InfoWindow();
+  map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
 
   if (startFinish) {
-    const flag = new google.maps.Marker({
-      position: startFinish,
-      map,
-      title: 'Start & finish',
+    const flag = L.marker([startFinish.lat, startFinish.lng], {
       icon: flagIcon(),
-      zIndex: 999,
-    });
-    flag.addListener('click', () => {
+      zIndexOffset: 900,
+      title: 'Start & finish',
+    }).addTo(map);
+    flag.on('click', () => {
       const div = document.createElement('div');
       div.className = 'point-menu';
       const title = document.createElement('strong');
       title.textContent = 'Start & finish van alle dagen';
       div.appendChild(title);
-      const svBtn = document.createElement('button');
-      svBtn.textContent = 'Bekijk in Street View';
-      svBtn.addEventListener('click', () => {
-        infoWindow.close();
-        const pano = map.getStreetView();
-        pano.setPosition(startFinish);
-        pano.setPov({ heading: 0, pitch: 0 });
-        pano.setVisible(true);
-      });
-      div.appendChild(svBtn);
-      infoWindow.setContent(div);
-      infoWindow.open({ anchor: flag, map });
+      div.appendChild(
+        menuButton('Bekijk in Street View', () => {
+          map.closePopup();
+          openStreetView(startFinish.lat, startFinish.lng);
+        })
+      );
+      openMapMenu(map, [startFinish.lat, startFinish.lng], div);
     });
   }
 
   await loadRoutes();
-};
+}
 
 async function loadRoutes() {
   const list = document.getElementById('distance-list');
@@ -78,23 +51,19 @@ async function loadRoutes() {
     if (!res.ok) throw new Error();
     rows = await res.json();
   } catch {
-    list.innerHTML = '<li class="hint">Let op: Routes laden mislukt.</li>';
+    list.innerHTML = '<li class="hint">Let op: routes laden mislukt.</li>';
     return;
   }
 
   for (const row of rows) {
     const path = (row.path && row.path.length > 1 ? row.path : row.waypoints) || [];
     if (path.length < 2) continue;
-    const polyline = new google.maps.Polyline({
-      path,
-      map,
-      strokeColor: DAY_COLORS[row.day],
-      strokeWeight: 5,
-      strokeOpacity: 0.85,
-    });
-    const bounds = new google.maps.LatLngBounds();
-    path.forEach((p) => bounds.extend(p));
-    routes[row.day] = { polyline, bounds, distance_m: row.distance_m };
+    const line = L.polyline(path.map((p) => [p.lat, p.lng]), {
+      color: DAY_COLORS[row.day],
+      weight: 5,
+      opacity: 0.85,
+    }).addTo(map);
+    routes[row.day] = { line, bounds: boundsOf(path), distance_m: row.distance_m };
   }
 
   renderDistanceList();
@@ -116,19 +85,19 @@ function renderDistanceList() {
 
 function applySelection() {
   const showAll = selectedDay === 'all';
-  const union = new google.maps.LatLngBounds();
-  let any = false;
+  let union = null;
   for (let day = 1; day <= 4; day++) {
     const r = routes[day];
     if (!r) continue;
     const visible = showAll || Number(selectedDay) === day;
-    r.polyline.setMap(visible ? map : null);
     if (visible) {
-      union.union(r.bounds);
-      any = true;
+      r.line.addTo(map);
+      union = union ? union.extend(r.bounds) : L.latLngBounds(r.bounds.getSouthWest(), r.bounds.getNorthEast());
+    } else {
+      r.line.remove();
     }
   }
-  if (any) map.fitBounds(union, 40);
+  if (union) map.fitBounds(union.pad(0.07));
 }
 
 document.querySelectorAll('.day-tab').forEach((tab) => {
@@ -141,4 +110,4 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
 });
 
 setupGps(() => map);
-loadGoogleMaps();
+init();
