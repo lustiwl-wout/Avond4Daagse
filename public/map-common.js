@@ -235,22 +235,28 @@ async function openStreetView(lat, lng) {
       svOverlay.classList.add('hidden');
     });
   }
-  // Zoek eerst het dichtstbijzijnde buitenpanorama (tot 150 m): op wandel-
-  // en fietspaden bestaat vaak geen beeld op het punt zelf en bleef het
-  // scherm anders stil zwart.
+  // Zoek het dichtstbijzijnde panorama (tot 150 m): eerst echte
+  // Street View-buitenbeelden, en als die er niet zijn ook 360°-foto's
+  // van gebruikers (photospheres) — die sluit de outdoor-zoekopdracht
+  // namelijk uit. Op wandel- en fietspaden is dat vaak het enige beeld.
   let pano;
-  try {
-    const svc = new google.maps.StreetViewService();
-    const result = await svc.getPanorama({
+  const svc = new google.maps.StreetViewService();
+  const lookup = (sources) =>
+    svc.getPanorama({
       location: { lat, lng },
       radius: 150,
       preference: google.maps.StreetViewPreference.NEAREST,
-      sources: [google.maps.StreetViewSource.OUTDOOR],
+      sources,
     });
-    pano = result.data;
+  try {
+    pano = (await lookup([google.maps.StreetViewSource.OUTDOOR])).data;
   } catch {
-    alert('Op deze plek (en binnen 150 meter eromheen) is geen Street View beschikbaar.');
-    return;
+    try {
+      pano = (await lookup([google.maps.StreetViewSource.DEFAULT])).data;
+    } catch {
+      alert('Op deze plek (en binnen 150 meter eromheen) is geen Street View of 360°-foto beschikbaar.');
+      return;
+    }
   }
 
   // Altijd een vers panorama in een zichtbare overlay, met de camera
