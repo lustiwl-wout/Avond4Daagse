@@ -636,7 +636,8 @@ eventApi.post('/admin/route', async (req, res) => {
       if (route === null) {
         return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
       }
-      return res.json(route);
+      console.log(`Wandelroute berekend via ${name} (${route.distance_m} m).`);
+      return res.json({ ...route, source: name });
     } catch (err) {
       console.error(`Routeservice ${name} faalde:`, err.message);
     }
