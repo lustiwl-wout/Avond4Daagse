@@ -9,6 +9,11 @@ function createMap(elementId, center, zoom) {
     attribution:
       'Kaartgegevens &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers',
   }).addTo(map);
+  // Leaflet meet zijn formaat alleen bij het laden; meet opnieuw zodra de
+  // kaartruimte verandert (bv. zijbalk die groeit na inloggen op mobiel).
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById(elementId));
+  }
   return map;
 }
 
