@@ -272,7 +272,12 @@ function throttledNominatim(url) {
     const wait = Math.max(0, 1100 - (Date.now() - lastGeoCall));
     if (wait > 0) await new Promise((r) => setTimeout(r, wait));
     lastGeoCall = Date.now();
-    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    // Timeout: één hangende Nominatim-aanroep mag de wachtrij (en daarmee
+    // alle adres-opzoekingen) niet eindeloos blokkeren.
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': OSM_UA },
+      signal: AbortSignal.timeout(8000),
+    });
     if (!resp.ok) throw new Error(`Nominatim gaf status ${resp.status}`);
     return resp.json();
   });
@@ -526,7 +531,10 @@ eventApi.post('/admin/route', async (req, res) => {
   try {
     const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
     const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
-    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': OSM_UA },
+      signal: AbortSignal.timeout(15000),
+    });
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
       return res.status(422).json({ error: 'Geen route mogelijk via deze punten.' });

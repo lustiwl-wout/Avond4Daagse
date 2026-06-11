@@ -462,6 +462,15 @@ function updatePauseBtn() {
   document.getElementById('pause-btn').textContent = pausePlacing
     ? 'Klik op de route… (of klik hier om te annuleren)'
     : `Pauzepunt ${d && d.pause ? 'verplaatsen' : 'plaatsen'} (dag ${currentDay})`;
+  updateMapCursor();
+}
+
+// Richtkruis-cursor zodra een klik op de kaart een punt plaatst (oversteek-
+// punt in verkeersmodus, of het pauzepunt), zodat zichtbaar is dat je kunt
+// klikken.
+function updateMapCursor() {
+  const el = document.getElementById('map');
+  if (el) el.classList.toggle('placing', !overviewMode && (editMode === 'vr' || pausePlacing));
 }
 
 document.getElementById('pause-btn').addEventListener('click', () => {
@@ -726,6 +735,7 @@ function setEditMode(m) {
   // In verkeersmodus geen tussenpunt-markers (wel de route van de dag zelf).
   updateDayVisibility();
   refreshVrLayer();
+  updateMapCursor();
 }
 
 document.getElementById('mode-route').addEventListener('click', () => setEditMode('route'));
@@ -1039,38 +1049,56 @@ async function addManualCrossing(clicked) {
     return;
   }
   const point = { lat: nearest.lat, lng: nearest.lng };
-  let name = 'oversteekpunt';
+  // Eerst opslaan en tonen — de straatnaam komt er daarna op de
+  // achtergrond bij (adresdienst kan traag zijn en mag niets blokkeren).
+  setVrStatus('Oversteekpunt toevoegen…');
+  const day = currentDay;
+  const data = await crossingRequest(day, 'POST', '', point);
+  if (!data || !data.crossing) return;
+  setVrStatus('Punt toegevoegd. Wijs er via het ruitje een team aan toe.');
   try {
-    const res = await fetch(`/api/address?lat=${point.lat}&lng=${point.lng}`);
+    const res = await fetch(`/api/address?lat=${point.lat}&lng=${point.lng}`, {
+      signal: AbortSignal.timeout(8000),
+    });
     if (res.ok) {
-      const data = await res.json();
-      if (data.road) name = data.road;
+      const { road } = await res.json();
+      if (road) {
+        await crossingRequest(day, 'PUT', `/${encodeURIComponent(data.crossing.id)}`, {
+          name: road,
+        });
+      }
     }
   } catch {
-    // naam is niet kritisch
+    // naam is niet kritisch; het punt staat er al
   }
-  const ok = await crossingRequest(currentDay, 'POST', '', { ...point, name });
-  if (ok) setVrStatus(`Punt "${name}" toegevoegd. Wijs er via het ruitje een team aan toe.`);
 }
 
 // Eén oversteekpunt toevoegen/bijwerken/verwijderen. De server werkt de
 // lijst atomair bij en stuurt de actuele lijst terug; die nemen we over —
 // zo blijven twee open schermen elkaars wijzigingen niet overschrijven.
+// Geeft het antwoord van de server terug, of null bij een fout.
 async function crossingRequest(day, method, suffix, body = null) {
-  const res = await fetch(api(`/admin/crossings/${day}${suffix}`), {
-    method,
-    headers: adminHeaders(!!body),
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(api(`/admin/crossings/${day}${suffix}`), {
+      method,
+      headers: adminHeaders(!!body),
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch {
+    setVrStatus('Let op: server niet bereikbaar — probeer het opnieuw.');
+    return null;
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     setVrStatus('Let op: ' + (err.error || 'oversteekpunt opslaan mislukt.'));
-    return false;
+    return null;
   }
   const data = await res.json().catch(() => null);
   if (data && Array.isArray(data.crossings)) days[day].crossings = data.crossings;
   refreshVrLayer();
-  return true;
+  return data || {};
 }
 
 // --- Verkeerslaag op de kaart ---

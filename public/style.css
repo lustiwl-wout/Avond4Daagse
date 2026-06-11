@@ -420,3 +420,9 @@ details > *:not(summary) { margin-top: 0.5rem; }
 }
 .contact-footer a, .contact-line a { color: var(--brand); font-weight: 600; }
 .contact-line { border-top: 1px solid var(--line); padding-top: 0.7rem; }
+
+/* Richtkruis zodra een kaartklik een punt plaatst (verkeersmodus/pauzepunt);
+   markers met een eigen menu houden hun pointer. */
+#map.placing.leaflet-container {
+  cursor: crosshair;
+}
