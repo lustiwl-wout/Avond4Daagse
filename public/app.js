@@ -16,6 +16,8 @@ if (window.innerWidth > 720) document.getElementById('info-details').open = true
 async function init() {
   const res = await fetch('/api/config');
   const config = await res.json();
+  const brandSub = document.getElementById('brand-sub');
+  if (brandSub && config.orgName) brandSub.textContent = '' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   sponsorOpen = !!config.sponsorOpen;

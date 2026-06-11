@@ -1,6 +1,8 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien de wandelroutes van dag 1 t/m 4 op Google Maps en kunnen onderweg hun eigen positie volgen met GPS. Beheerders tekenen de routes op een aparte adminpagina. Routes worden opgeslagen in een Neon PostgreSQL-database en de app draait op Render.
+Webapp voor het organiseren van een avondvierdaagse — voor élke school of vereniging. Bezoekers zien de wandelroutes van dag 1 t/m 4 op de kaart (OpenStreetMap) en volgen onderweg hun eigen positie met GPS; verkeersregelaars krijgen hun posten, tijdschema en navigatie; de organisatie beheert alles op een afgeschermde adminpagina. Routes staan in een (gratis) Neon PostgreSQL-database en de app draait op Render.
+
+Elke organisatie draait zijn eigen exemplaar: fork/kloon deze repository, deploy hem en stel twee omgevingsvariabelen in — `ORG_NAME` (naam van je school/vereniging, komt in de koppen en op de print) en optioneel `START_ADDRESS` (het start/finish-adres; zonder adres sleep je de vlag in de admin zelf op zijn plek). De kleuren van de huisstijl staan als variabelen bovenaan `public/style.css`.
 
 ## Pagina's
 
@@ -14,7 +16,7 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 ## Routes beheren (`/admin`)
 
 - Log in met het beheerwachtwoord (`ADMIN_PASSWORD`).
-- **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Bij de eerste keer inloggen zoekt de app dit punt automatisch op (instelbaar via de omgevingsvariabele `START_ADDRESS`); daarna kun je de 🏁-vlag nog precies goed slepen. Bezoekers zien alleen de vlag, geen adres.
+- **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Is `START_ADDRESS` ingesteld, dan zoekt de app dit punt bij de eerste keer inloggen automatisch op; daarna (of zonder adres) sleep je de vlag precies op zijn plek. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
 - **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
@@ -85,6 +87,8 @@ npm start              # http://localhost:3000
    - `DATABASE_URL` = je Neon-connectiestring
    - `GOOGLE_MAPS_API_KEY` = je Google Maps-key
    - `ADMIN_PASSWORD` = zelfgekozen wachtwoord voor `/admin`
+   - `ORG_NAME` = naam van je school/vereniging
+   - `START_ADDRESS` = start/finish-adres (optioneel)
 4. Deploy — klaar! 🎉
 
 > De GPS-functie werkt alleen via HTTPS; op Render is dat automatisch geregeld.

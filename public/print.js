@@ -6,6 +6,7 @@ const params = new URLSearchParams(location.search);
 const day = Math.min(4, Math.max(1, Number(params.get('day')) || 1));
 
 let svStaticKey = '';
+let orgName = '';
 let eventSchedule = null; // per dag {date, time}
 let vrSettings = { walkKmh: 4, passMin: 8 };
 let startFinish = null;
@@ -40,6 +41,7 @@ async function init() {
   ]);
   const config = await cfgRes.json();
   svStaticKey = config.googleMapsApiKey || '';
+  orgName = config.orgName || '';
   startFinish = config.startFinish;
   eventSchedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
@@ -68,7 +70,7 @@ function streetViewUrl(p, heading) {
 function render() {
   let html = `<div class="page">
     <h1>Verkeersregelaarsplan — Dag ${day}</h1>
-    <p class="sub">Avond4Daagse Basisschool Syncope · wandeltempo ${vrSettings.walkKmh} km/u ·
+    <p class="sub">Avond4Daagse ${esc(orgName)} · wandeltempo ${vrSettings.walkKmh} km/u ·
       passeertijd stoet ${vrSettings.passMin} min</p>
     <div class="pmap pmap-lg" id="map-overview"></div>
     <table>

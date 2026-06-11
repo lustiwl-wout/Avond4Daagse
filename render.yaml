@@ -12,3 +12,7 @@ services:
         sync: false # Google Maps browser-key (website-restrictie), voor de kaarten op de site
       - key: ADMIN_PASSWORD
         sync: false # zelfgekozen wachtwoord voor de beheerpagina (/admin)
+      - key: ORG_NAME
+        sync: false # naam van je school/vereniging, bv. "Basisschool Syncope - Almere"
+      - key: START_ADDRESS
+        sync: false # adres van het start/finish-punt (optioneel; anders sleep je de vlag zelf)

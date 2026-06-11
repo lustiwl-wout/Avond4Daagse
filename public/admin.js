@@ -90,6 +90,8 @@ function updateDraftStatus() {
 async function init() {
   const res = await fetch('/api/config');
   const config = await res.json();
+  const brandSub = document.getElementById('brand-sub');
+  if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   schedule = config.schedule || null;

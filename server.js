@@ -6,10 +6,14 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Naam van de organisatie (school/vereniging) die deze installatie gebruikt.
+const ORG_NAME = process.env.ORG_NAME || 'Avondvierdaagse';
+
 // Vast start- en eindpunt van alle routes. Het adres wordt alleen op de
 // beheerpagina gebruikt om de plek eenmalig op te zoeken; bezoekers zien
-// alleen een "Start & finish"-markering zonder adres.
-const START_ADDRESS = process.env.START_ADDRESS || 'Trombonestraat 33, Almere, Nederland';
+// alleen een "Start & finish"-markering zonder adres. Niet ingesteld?
+// Dan sleept de beheerder de vlag zelf op zijn plek.
+const START_ADDRESS = process.env.START_ADDRESS || '';
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -186,6 +190,7 @@ app.get('/api/config', async (req, res) => {
     console.error('Instellingen ophalen mislukt:', err);
   }
   res.json({
+    orgName: ORG_NAME,
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
     startFinish,
     vrSettings,
@@ -593,7 +598,7 @@ app.delete('/api/routes/:day', async (req, res) => {
 
 // --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
 
-const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (schoolproject basisschool Almere)';
+const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (https://github.com/lustiwl-wout/Avond4Daagse)';
 const OSRM_PROFILES = {
   foot: 'https://routing.openstreetmap.de/routed-foot',
 };
