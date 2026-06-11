@@ -40,6 +40,42 @@ app.use(
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
+// --- Wachtwoorden: scrypt met een random salt per wachtwoord ---
+// Opslagformaat: "scrypt:<salt hex>:<hash hex>". Oudere events hebben nog
+// een ongezouten sha256-hash; die wordt bij de eerste succesvolle login
+// automatisch geüpgraded (zie requireAdmin).
+const scryptAsync = require('util').promisify(crypto.scrypt);
+
+async function hashPassword(pw) {
+  const salt = crypto.randomBytes(16);
+  const hash = await scryptAsync(String(pw), salt, 32);
+  return `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`;
+}
+
+async function verifyPassword(pw, stored) {
+  if (!pw || !stored) return false;
+  if (stored.startsWith('scrypt:')) {
+    const [, saltHex, hashHex] = stored.split(':');
+    const hash = await scryptAsync(String(pw), Buffer.from(saltHex, 'hex'), 32);
+    const expected = Buffer.from(hashHex, 'hex');
+    return hash.length === expected.length && crypto.timingSafeEqual(hash, expected);
+  }
+  // Verouderd formaat: ongezouten sha256.
+  const a = Buffer.from(sha256(pw), 'hex');
+  const b = Buffer.from(String(stored), 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Masterwachtwoord (omgevingsvariabele) — timing-safe vergeleken.
+function checkMaster(given) {
+  const master = process.env.ADMIN_PASSWORD || '';
+  if (!master || !given) return false;
+  return crypto.timingSafeEqual(
+    Buffer.from(sha256(given), 'hex'),
+    Buffer.from(sha256(master), 'hex')
+  );
+}
+
 const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'simulate', 'favicon.ico', '']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
@@ -153,7 +189,7 @@ async function migrateToEvents() {
     }
   }
   if (defaultEventId === null && hasOrphans) {
-    const hash = sha256(process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex'));
+    const hash = await hashPassword(process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex'));
     const { rows } = await pool.query(
       `INSERT INTO events (slug, name, password_hash)
        VALUES ('syncope', 'Basisschool Syncope · Almere', $1)
@@ -202,11 +238,18 @@ function requireDb(res) {
   return true;
 }
 
-function requireAdmin(req, res) {
+async function requireAdmin(req, res) {
   const given = req.get('x-admin-password') || '';
-  const master = process.env.ADMIN_PASSWORD || '';
-  const ok =
-    (master && given === master) || (req.event && given && sha256(given) === req.event.password_hash);
+  let ok = checkMaster(given);
+  if (!ok && req.event) {
+    ok = await verifyPassword(given, req.event.password_hash);
+    if (ok && !String(req.event.password_hash).startsWith('scrypt:')) {
+      // Oude sha256-hash: stilletjes upgraden naar scrypt met salt.
+      hashPassword(given)
+        .then((h) => pool.query('UPDATE events SET password_hash = $1 WHERE id = $2', [h, req.event.id]))
+        .catch((err) => console.error('Wachtwoord-upgrade mislukt:', err));
+    }
+  }
   if (!ok) {
     res.status(401).json({ error: 'Onjuist wachtwoord.' });
     return false;
@@ -460,8 +503,7 @@ app.post('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   // Nieuwe avondvierdaagsen aanmaken kan alleen door de platformbeheerder
   // (master-wachtwoord), via de /beheer-pagina.
-  const master = process.env.ADMIN_PASSWORD || '';
-  if (!master || req.get('x-admin-password') !== master) {
+  if (!checkMaster(req.get('x-admin-password'))) {
     return res.status(401).json({ error: 'Alleen de platformbeheerder kan een avondvierdaagse aanmaken.' });
   }
   const { name, slug, password } = req.body || {};
@@ -482,7 +524,7 @@ app.post('/api/events', async (req, res) => {
     await pool.query('INSERT INTO events (slug, name, password_hash) VALUES ($1, $2, $3)', [
       cleanSlug,
       cleanName,
-      sha256(password),
+      await hashPassword(password),
     ]);
     res.status(201).json({ slug: cleanSlug });
   } catch (err) {
@@ -542,14 +584,33 @@ eventApi.get('/config', async (req, res) => {
 });
 
 // Wachtwoordcontrole voor de adminpagina.
-eventApi.get('/admin/check', (req, res) => {
-  if (!requireAdmin(req, res)) return;
+eventApi.get('/admin/check', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
   res.status(204).end();
+});
+
+// Beheerwachtwoord van dit event wijzigen.
+eventApi.put('/admin/password', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const { password } = req.body || {};
+  if (typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ error: 'Kies een wachtwoord van minstens 6 tekens.' });
+  }
+  try {
+    await pool.query('UPDATE events SET password_hash = $1 WHERE id = $2', [
+      await hashPassword(password),
+      req.event.id,
+    ]);
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Wachtwoord wijzigen mislukt.' });
+  }
 });
 
 // Adres zoeken voor het start/finish-punt.
 eventApi.get('/admin/geocode', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const q = String(req.query.q || '').trim();
   if (!q) return res.status(400).json({ error: 'Geen adres opgegeven.' });
   try {
@@ -566,7 +627,7 @@ eventApi.get('/admin/geocode', async (req, res) => {
 
 // Start/finish-punt vastleggen.
 eventApi.put('/admin/start-finish', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const { lat, lng } = req.body || {};
   if (typeof lat !== 'number' || typeof lng !== 'number') {
     return res.status(400).json({ error: 'lat en lng zijn verplicht.' });
@@ -582,7 +643,7 @@ eventApi.put('/admin/start-finish', async (req, res) => {
 
 // Planningsinstellingen (wandeltempo en passeertijd).
 eventApi.put('/admin/vr-settings', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const { walkKmh, passMin } = req.body || {};
   if (![walkKmh, passMin].every((v) => typeof v === 'number' && v >= 0 && v < 100)) {
     return res.status(400).json({ error: 'Ongeldige planningsinstellingen.' });
@@ -598,7 +659,7 @@ eventApi.put('/admin/vr-settings', async (req, res) => {
 
 // Datum en starttijd per loopdag.
 eventApi.put('/admin/event-schedule', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const { days } = req.body || {};
   if (!days || typeof days !== 'object') return res.status(400).json({ error: 'Ongeldige planning.' });
   const cleaned = {};
@@ -624,7 +685,7 @@ eventApi.put('/admin/event-schedule', async (req, res) => {
 
 // Pauzepunt van een dag plaatsen of weghalen.
 eventApi.put('/admin/pause/:day', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   const { pause } = req.body || {};
@@ -648,7 +709,7 @@ eventApi.put('/admin/pause/:day', async (req, res) => {
 // eentje antwoordt. 422 = er bestaat echt geen wandelroute via deze punten;
 // 502 = geen van de diensten was bereikbaar.
 eventApi.post('/admin/route', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const { profile, points } = req.body || {};
   if (profile !== 'foot') return res.status(400).json({ error: 'Onbekend routeprofiel.' });
   if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
@@ -689,7 +750,7 @@ eventApi.get('/routes', async (req, res) => {
 // --- Conceptversies: elke wijziging wordt automatisch bewaard ---
 
 eventApi.get('/admin/drafts', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   try {
     const { rows } = await pool.query(
       `SELECT DISTINCT ON (day) day, waypoints, path, distance_m
@@ -713,7 +774,7 @@ eventApi.get('/admin/drafts', async (req, res) => {
 });
 
 eventApi.post('/admin/drafts/:day', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   const { waypoints, path: routePath, distance_m } = req.body;
@@ -748,7 +809,7 @@ eventApi.post('/admin/drafts/:day', async (req, res) => {
 });
 
 eventApi.delete('/admin/drafts/:day/latest', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   try {
@@ -775,7 +836,7 @@ eventApi.delete('/admin/drafts/:day/latest', async (req, res) => {
 
 // Route definitief publiceren; conceptversies worden gewist.
 eventApi.put('/routes/:day', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   const { waypoints, path: routePath, distance_m } = req.body;
@@ -809,7 +870,7 @@ eventApi.put('/routes/:day', async (req, res) => {
 });
 
 eventApi.delete('/routes/:day', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   try {
@@ -830,7 +891,7 @@ eventApi.delete('/routes/:day', async (req, res) => {
 // een andere dag verplaatsen; heeft de doeldag al een route, dan wisselen
 // de dagen om. De loopdag-datums blijven bij hun kalenderdag.
 eventApi.post('/admin/move-route', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const from = Number((req.body || {}).from);
   const to = Number((req.body || {}).to);
   if (![1, 2, 3, 4].includes(from) || ![1, 2, 3, 4].includes(to) || from === to) {
@@ -927,7 +988,7 @@ function parseTeamIds(value) {
 
 // Punt toevoegen.
 eventApi.post('/admin/crossings/:day', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   const body = req.body || {};
@@ -953,7 +1014,7 @@ eventApi.post('/admin/crossings/:day', async (req, res) => {
 
 // Punt bijwerken (teamtoewijzing of naam).
 eventApi.put('/admin/crossings/:day/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   const body = req.body || {};
@@ -980,7 +1041,7 @@ eventApi.put('/admin/crossings/:day/:id', async (req, res) => {
 
 // Punt verwijderen.
 eventApi.delete('/admin/crossings/:day/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const day = parseDay(req, res);
   if (day === null) return;
   try {
@@ -1014,7 +1075,7 @@ eventApi.get('/teams', async (req, res) => {
 });
 
 eventApi.post('/admin/teams', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
   try {
@@ -1035,7 +1096,7 @@ eventApi.post('/admin/teams', async (req, res) => {
 });
 
 eventApi.delete('/admin/teams/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   const teamId = Number(req.params.id);
   try {
     const { rowCount } = await pool.query('DELETE FROM teams WHERE id = $1 AND event_id = $2', [
@@ -1123,7 +1184,7 @@ eventApi.post('/sponsors', async (req, res) => {
 });
 
 eventApi.get('/admin/sponsors', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   try {
     const { rows } = await pool.query(
       `SELECT id, day, lat, lng, first_name, last_name, email, phone, action, created_at
@@ -1138,7 +1199,7 @@ eventApi.get('/admin/sponsors', async (req, res) => {
 });
 
 eventApi.delete('/admin/sponsors/:id', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
+  if (!(await requireAdmin(req, res))) return;
   try {
     const { rowCount } = await pool.query('DELETE FROM sponsors WHERE id = $1 AND event_id = $2', [
       Number(req.params.id),

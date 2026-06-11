@@ -17,7 +17,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 ## Routes beheren (`/admin`)
 
-- Log in met het beheerwachtwoord van jouw event (gekozen bij het aanmaken). Het master-wachtwoord van de platformbeheerder (omgevingsvariabele `ADMIN_PASSWORD`) werkt op elk event.
+- Log in met het beheerwachtwoord van jouw event (gekozen bij het aanmaken; te wijzigen in de admin onder "Beheerwachtwoord wijzigen"). Het master-wachtwoord van de platformbeheerder (omgevingsvariabele `ADMIN_PASSWORD`) werkt op elk event. Eventwachtwoorden staan als scrypt-hash met salt in de database; oudere installaties worden bij de eerste login automatisch geüpgraded.
 - **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt: zoek het adres op in de admin of sleep de vlag op zijn plek. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.

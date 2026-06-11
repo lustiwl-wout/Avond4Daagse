@@ -1278,6 +1278,31 @@ function renderTeams() {
   }
 }
 
+// --- Beheerwachtwoord wijzigen ---
+document.getElementById('change-password-btn').addEventListener('click', async () => {
+  const input = document.getElementById('new-admin-password');
+  const newPwd = input.value;
+  if (newPwd.length < 6) {
+    setSaveStatus('Let op: kies een wachtwoord van minstens 6 tekens.');
+    return;
+  }
+  const res = await fetch(api('/admin/password'), {
+    method: 'PUT',
+    headers: adminHeaders(true),
+    body: JSON.stringify({ password: newPwd }),
+  });
+  if (res.ok) {
+    // Voortaan met het nieuwe wachtwoord werken; sessie blijft geldig.
+    password = newPwd;
+    sessionStorage.setItem(PWD_KEY, newPwd);
+    input.value = '';
+    setSaveStatus('Beheerwachtwoord gewijzigd.');
+  } else {
+    const err = await res.json().catch(() => ({}));
+    setSaveStatus('Let op: ' + (err.error || 'wachtwoord wijzigen mislukt.'));
+  }
+});
+
 document.getElementById('add-team-btn').addEventListener('click', async () => {
   const input = document.getElementById('team-name');
   const name = input.value.trim();
