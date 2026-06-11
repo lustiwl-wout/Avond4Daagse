@@ -6,6 +6,10 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Achter de proxy van Render: req.ip = het echte bezoekers-IP (nodig voor
+// de rate limiting op wachtwoordpogingen).
+app.set('trust proxy', 1);
+
 // Eén installatie host meerdere avondvierdaagsen ("events"): elke
 // organisatie heeft een eigen pad (/syncope, /obs-noord, …) met eigen
 // routes, teams, sponsors, instellingen en beheerwachtwoord.
@@ -64,6 +68,47 @@ async function verifyPassword(pw, stored) {
   const a = Buffer.from(sha256(pw), 'hex');
   const b = Buffer.from(String(stored), 'hex');
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// --- Rate limiting op wachtwoordpogingen (per IP) ---
+// Na 10 mislukte pogingen binnen 15 minuten worden nieuwe pogingen vanaf
+// dat IP tijdelijk geweigerd; een geslaagde login wist de teller.
+const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_MAX_FAILURES = 10;
+const authFailures = new Map(); // ip -> { count, first }
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, e] of authFailures) {
+    if (now - e.first > AUTH_WINDOW_MS) authFailures.delete(ip);
+  }
+}, 60 * 1000).unref();
+
+// Minuten die het IP nog moet wachten, of 0 als pogingen zijn toegestaan.
+function authBlockedMinutes(ip) {
+  const e = authFailures.get(ip);
+  if (!e) return 0;
+  if (Date.now() - e.first > AUTH_WINDOW_MS) {
+    authFailures.delete(ip);
+    return 0;
+  }
+  if (e.count < AUTH_MAX_FAILURES) return 0;
+  return Math.max(1, Math.ceil((e.first + AUTH_WINDOW_MS - Date.now()) / 60000));
+}
+
+function recordAuthFailure(ip) {
+  const e = authFailures.get(ip);
+  if (!e || Date.now() - e.first > AUTH_WINDOW_MS) {
+    authFailures.set(ip, { count: 1, first: Date.now() });
+  } else {
+    e.count++;
+  }
+}
+
+function rejectTooManyAttempts(res, minutes) {
+  res.status(429).json({
+    error: `Te veel mislukte wachtwoordpogingen — probeer het over ${minutes} ${minutes === 1 ? 'minuut' : 'minuten'} opnieuw.`,
+  });
 }
 
 // Masterwachtwoord (omgevingsvariabele) — timing-safe vergeleken.
@@ -239,6 +284,11 @@ function requireDb(res) {
 }
 
 async function requireAdmin(req, res) {
+  const blocked = authBlockedMinutes(req.ip);
+  if (blocked) {
+    rejectTooManyAttempts(res, blocked);
+    return false;
+  }
   const given = req.get('x-admin-password') || '';
   let ok = checkMaster(given);
   if (!ok && req.event) {
@@ -251,9 +301,11 @@ async function requireAdmin(req, res) {
     }
   }
   if (!ok) {
+    recordAuthFailure(req.ip);
     res.status(401).json({ error: 'Onjuist wachtwoord.' });
     return false;
   }
+  authFailures.delete(req.ip);
   return true;
 }
 
@@ -503,9 +555,13 @@ app.post('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   // Nieuwe avondvierdaagsen aanmaken kan alleen door de platformbeheerder
   // (master-wachtwoord), via de /beheer-pagina.
+  const blocked = authBlockedMinutes(req.ip);
+  if (blocked) return rejectTooManyAttempts(res, blocked);
   if (!checkMaster(req.get('x-admin-password'))) {
+    recordAuthFailure(req.ip);
     return res.status(401).json({ error: 'Alleen de platformbeheerder kan een avondvierdaagse aanmaken.' });
   }
+  authFailures.delete(req.ip);
   const { name, slug, password } = req.body || {};
   const cleanName = String(name || '').trim();
   const cleanSlug = String(slug || '').trim().toLowerCase();
