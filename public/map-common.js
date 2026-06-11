@@ -239,8 +239,14 @@ async function openStreetView(lat, lng) {
       pov: { heading: 0, pitch: 0 },
     });
   }
-  svPano.setPosition({ lat, lng });
+  // Eerst tonen en een resize-signaal geven; een positie-update terwijl het
+  // paneel verborgen is verwerkt Google niet, waardoor je anders bij een
+  // tweede keer openen nog het vorige punt ziet.
   svOverlay.classList.remove('hidden');
+  google.maps.event.trigger(svPano, 'resize');
+  svPano.setPosition({ lat, lng });
+  svPano.setPov({ heading: 0, pitch: 0 });
+  svPano.setVisible(true);
 }
 
 // Hulpfunctie voor menuknoppen.
