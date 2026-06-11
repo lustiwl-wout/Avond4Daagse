@@ -138,8 +138,9 @@ function bearingDeg(a, b) {
   return (Math.atan2(dx, dy) * 180) / Math.PI;
 }
 
-// Looprichting: pijlpunten in de routekleur, om de `spacingM` meter langs de
-// route, meedraaiend met de richting. Geeft een layerGroup terug.
+// Looprichting: witte pijlpunten met een rand in de routekleur (zo steken ze
+// af op de gekleurde lijn), om de `spacingM` meter langs de route en
+// meedraaiend met de richting. Geeft een layerGroup terug.
 function directionArrows(path, color, spacingM) {
   const group = L.layerGroup();
   if (!path || path.length < 2) return group;
@@ -163,7 +164,7 @@ function directionArrows(path, color, spacingM) {
           icon: htmlIcon(
             `<div class="m-arrow" style="transform: rotate(${rotation}deg)">` +
               `<svg viewBox="0 0 20 20" width="18" height="18">` +
-              `<path d="M10 2.5 L16.5 14.5 L10 11 L3.5 14.5 Z" fill="${color}" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>` +
+              `<path d="M10 2.5 L16.5 14.5 L10 11 L3.5 14.5 Z" fill="#ffffff" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/>` +
               `</svg></div>`,
             [18, 18],
             [9, 9]
