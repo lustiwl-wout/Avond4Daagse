@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
 const { Pool } = require('pg');
-const { findConflicts } = require('./geometry');
+const { findConflicts, overlapLength } = require('./geometry');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -635,6 +635,60 @@ const OSRM_PROFILES = {
 
 // Route berekenen via OSRM (de router van openstreetmap.org): kent alle
 // voet- en fietspaden. De wandelroute gebruikt 'foot', teamroutes 'bike'.
+// Navigatie voor verkeersregelaars (publiek, /verkeer heeft geen wachtwoord):
+// fietsroute van de huidige positie naar een post, om de stoet heen. OSRM
+// levert alternatieven; gekozen wordt de eerste route die de wandelroute
+// nergens dwars kruist én er niet overheen rijdt — ook als die langer duurt.
+// Lukt dat niet, dan de minst slechte mét de conflictplekken erbij.
+app.post('/api/navigate', async (req, res) => {
+  if (!requireDb(res)) return;
+  const { day, from, to } = req.body || {};
+  const dayNum = Number(day);
+  if (![1, 2, 3, 4].includes(dayNum) || !isValidLatLng(from || {}) || !isValidLatLng(to || {})) {
+    return res.status(400).json({ error: 'Ongeldige navigatie-aanvraag.' });
+  }
+  try {
+    const { rows } = await pool.query('SELECT path FROM day_routes WHERE day = $1', [dayNum]);
+    if (rows.length === 0 || !rows[0].path) {
+      return res.status(404).json({ error: 'Geen wandelroute voor deze dag.' });
+    }
+    const walkPath = rows[0].path;
+    const coords = `${from.lng.toFixed(6)},${from.lat.toFixed(6)};${to.lng.toFixed(6)},${to.lat.toFixed(6)}`;
+    const url = `${OSRM_PROFILES.bike}/route/v1/driving/${coords}?overview=full&geometries=geojson&alternatives=3`;
+    const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA } });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok || data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+      return res.status(422).json({ error: 'Geen fietsroute gevonden.' });
+    }
+    const evaluated = data.routes.map((r) => {
+      const path = r.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+      // Bij vertrek- en aankomstpunt mag de route de stoet raken (de post
+      // ligt immers óp de wandelroute).
+      const conflicts = findConflicts(path, walkPath, [from, to], { excludeDist: 60 });
+      const overlapM = Math.round(overlapLength(path, walkPath, 15));
+      return {
+        path,
+        distance_m: Math.round(r.distance),
+        duration_s: Math.round(r.duration),
+        conflicts,
+        overlap_m: overlapM,
+        clean: conflicts.length === 0 && overlapM < 80,
+      };
+    });
+    evaluated.sort(
+      (a, b) =>
+        Number(b.clean) - Number(a.clean) ||
+        a.conflicts.length - b.conflicts.length ||
+        a.overlap_m - b.overlap_m ||
+        a.duration_s - b.duration_s
+    );
+    res.json(evaluated[0]);
+  } catch (err) {
+    console.error('Navigatie mislukt:', err);
+    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar.' });
+  }
+});
+
 app.post('/api/admin/route', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const { profile, points } = req.body || {};

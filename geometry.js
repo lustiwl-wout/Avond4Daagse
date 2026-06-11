@@ -120,4 +120,45 @@ function findConflicts(
   return clusters;
 }
 
-module.exports = { findConflicts };
+// Kleinste afstand (m) van een punt tot een pad.
+function distanceToPath(path, point) {
+  let best = Infinity;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const segLen = distanceM(a, b);
+    let t = 0;
+    if (segLen > 0) {
+      const lat0 = ((a.lat + b.lat) / 2) * (Math.PI / 180);
+      const bx = (b.lng - a.lng) * Math.cos(lat0);
+      const by = b.lat - a.lat;
+      const px = (point.lng - a.lng) * Math.cos(lat0);
+      const py = point.lat - a.lat;
+      t = Math.max(0, Math.min(1, (px * bx + py * by) / (bx * bx + by * by)));
+    }
+    const proj = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+    best = Math.min(best, distanceM(point, proj));
+  }
+  return best;
+}
+
+// Lengte (m) van `path` die binnen maxDist meter van refPath ligt — meet
+// hoeveel een fietsroute over de wandelroute heen rijdt.
+function overlapLength(path, refPath, maxDist = 15) {
+  let overlap = 0;
+  for (let i = 0; i < path.length - 1; i++) {
+    const a = path[i];
+    const b = path[i + 1];
+    const seg = distanceM(a, b);
+    if (seg === 0) continue;
+    const steps = Math.max(1, Math.ceil(seg / 10));
+    for (let k = 0; k < steps; k++) {
+      const t = (k + 0.5) / steps;
+      const p = { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
+      if (distanceToPath(refPath, p) <= maxDist) overlap += seg / steps;
+    }
+  }
+  return overlap;
+}
+
+module.exports = { findConflicts, overlapLength };

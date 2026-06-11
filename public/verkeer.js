@@ -12,6 +12,13 @@ let teams = [];
 let teamRoutes = {}; // `${teamId}_${day}` -> { path, conflicts, timing }
 const walkRoutes = {}; // day -> { line, bounds, crossings }
 let vrLayers = [];
+let lastSortedCrossings = [];
+
+// Navigatie: fietsroute van je GPS-positie naar je post, om de stoet heen.
+let navTarget = null;
+let navLayers = [];
+let lastNavAt = 0;
+let lastNavPos = null;
 
 if (window.innerWidth > 720) document.getElementById('info-details').open = true;
 
@@ -104,6 +111,7 @@ document.getElementById('vr-team').addEventListener('change', (e) => {
 });
 
 function refreshView() {
+  stopNav();
   vrLayers.forEach((l) => l.remove());
   vrLayers = [];
   for (let day = 1; day <= 4; day++) {
@@ -145,6 +153,7 @@ function refreshView() {
   const order = new Map();
   route.crossings.forEach((c) => order.set(c, nearestOnPath(route.path, c).along));
   const sortedCrossings = [...route.crossings].sort((a, b) => order.get(a) - order.get(b));
+  lastSortedCrossings = sortedCrossings;
 
   let index = 0;
   for (const c of sortedCrossings) {
@@ -228,14 +237,142 @@ function renderSchedule(teamFilter) {
     list.innerHTML = '<li class="hint">Nog geen planning voor deze dag.</li>';
     return;
   }
+  const posts = teamPosts(teamFilter);
   tr.timing.schedule.forEach((post, i) => {
     const li = document.createElement('li');
     const arrive =
       post.arriveMin != null ? ` · jullie aankomst: ${fmtMoment(post.arriveMin)}` : '';
     li.innerHTML = `<span><strong>Post ${i + 1}:</strong> ${post.name}<br>
       <span class="route-meta">stoet komt aan: ${fmtMoment(post.headMin)} · hele stoet voorbij (vertrek kan): ${fmtMoment(post.leaveMin)}${arrive}</span></span>`;
+    const crossing = posts[i];
+    if (crossing) {
+      const navBtn = document.createElement('button');
+      navBtn.textContent = navTarget === crossing ? 'Stop route' : 'Fiets hierheen';
+      navBtn.addEventListener('click', () => {
+        if (navTarget === crossing) {
+          stopNav();
+        } else {
+          navTarget = crossing;
+          const pos = gps.getPosition();
+          if (pos) computeNav(pos);
+          else setNavStatus('Start eerst de GPS, dan verschijnt de fietsroute naar deze post.');
+        }
+        renderSchedule(teamFilter);
+      });
+      li.appendChild(navBtn);
+    }
     list.appendChild(li);
   });
+}
+
+// Posten van een team, in routevolgorde (zelfde volgorde als het tijdschema).
+function teamPosts(teamId) {
+  return lastSortedCrossings.filter((c) => crossingTeams(c).includes(teamId));
+}
+
+function setNavStatus(text) {
+  document.getElementById('nav-status').textContent = text;
+}
+
+function clearNavLayers() {
+  navLayers.forEach((l) => l.remove());
+  navLayers = [];
+}
+
+function stopNav() {
+  navTarget = null;
+  clearNavLayers();
+  setNavStatus('');
+}
+
+// Fietsroute berekenen: de server kiest een route om de stoet heen (ook als
+// die langer is); lukt dat niet, dan met waarschuwing waar je de stoet kruist.
+async function computeNav(pos) {
+  if (!navTarget) return;
+  lastNavAt = Date.now();
+  lastNavPos = pos;
+  setNavStatus('Fietsroute berekenen…');
+  try {
+    const res = await fetch('/api/navigate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        day: selectedDay,
+        from: pos,
+        to: { lat: navTarget.lat, lng: navTarget.lng },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setNavStatus('Let op: ' + (err.error || 'fietsroute berekenen mislukt.'));
+      return;
+    }
+    const r = await res.json();
+    clearNavLayers();
+    navLayers.push(
+      L.polyline(r.path.map((p) => [p.lat, p.lng]), {
+        color: '#111827',
+        weight: 4,
+        dashArray: '8 8',
+        opacity: 0.9,
+      }).addTo(map)
+    );
+    for (const cf of r.conflicts || []) {
+      navLayers.push(
+        L.marker([cf.lat, cf.lng], {
+          icon: conflictIcon(false),
+          zIndexOffset: 1150,
+          title: 'Hier kruis je de stoet — stap af en kijk uit',
+        })
+          .bindPopup('<div class="point-menu"><strong>Hier kruis je de stoet — stap af en kijk uit!</strong></div>')
+          .addTo(map)
+      );
+    }
+    const min = Math.max(1, Math.round(r.duration_s / 60));
+    const km = (r.distance_m / 1000).toFixed(1).replace('.', ',');
+    setNavStatus(
+      r.clean
+        ? `Fietsroute naar je post: ${min} min (${km} km), om de stoet heen.`
+        : `Let op: er is geen route die de stoet vermijdt — kruis op de gemarkeerde plek met beleid (stap af) of wacht tot de stoet voorbij is. ${min} min (${km} km).`
+    );
+  } catch {
+    setNavStatus('Let op: fietsroute berekenen mislukt — probeer het opnieuw.');
+  }
+}
+
+// Tijdens het fietsen de route bijwerken (hooguit elke 20 s en pas na 40 m).
+function onGpsFix(pos) {
+  if (!navTarget && selectedTeam !== 'all') {
+    const posts = teamPosts(Number(selectedTeam));
+    if (posts.length > 0) {
+      navTarget = pickNextPost(posts);
+      renderSchedule(Number(selectedTeam));
+      computeNav(pos);
+      return;
+    }
+  }
+  if (!navTarget) return;
+  if (Date.now() - lastNavAt < 20000) return;
+  if (lastNavPos && distM(lastNavPos, pos) < 40) return;
+  computeNav(pos);
+}
+
+// Eerstvolgende post op basis van de klok (als de starttijd bekend is),
+// anders gewoon de eerste post.
+function pickNextPost(posts) {
+  const e = eventSchedule && eventSchedule[selectedDay];
+  const tr = teamRoutes[`${selectedTeam}_${selectedDay}`];
+  const sched = tr && tr.timing && tr.timing.schedule;
+  if (e && e.time && sched) {
+    const [h, m] = e.time.split(':').map(Number);
+    const now = new Date();
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    for (let i = 0; i < posts.length && i < sched.length; i++) {
+      if (h * 60 + m + sched[i].headMin > nowMin) return posts[i];
+    }
+    return posts[posts.length - 1];
+  }
+  return posts[0];
 }
 
 // Tijdstip als kloktijd (als de starttijd van de dag bekend is), anders in
@@ -250,5 +387,5 @@ function fmtMoment(min) {
   return `+${min} min`;
 }
 
-setupGps(() => map);
+const gps = setupGps(() => map, onGpsFix);
 init();
