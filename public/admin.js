@@ -402,10 +402,10 @@ function loadDayPoints(day, waypoints) {
 const PAUSE_SNAP_M = 50;
 
 function updatePauseBtn() {
-  const d = days[currentDay];
+  const d = days[currentDay]; // bestaat nog niet vóór init()
   document.getElementById('pause-btn').textContent = pausePlacing
     ? 'Klik op de route… (of klik hier om te annuleren)'
-    : `Pauzepunt ${d.pause ? 'verplaatsen' : 'plaatsen'} (dag ${currentDay})`;
+    : `Pauzepunt ${d && d.pause ? 'verplaatsen' : 'plaatsen'} (dag ${currentDay})`;
 }
 
 document.getElementById('pause-btn').addEventListener('click', () => {
@@ -614,7 +614,7 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
 
 function setEditMode(m) {
   editMode = m;
-  map.closePopup();
+  if (map) map.closePopup();
   document.getElementById('mode-route').classList.toggle('active', m === 'route');
   document.getElementById('mode-rec').classList.toggle('active', m === 'rec');
   document.getElementById('mode-vr').classList.toggle('active', m === 'vr');
@@ -624,6 +624,7 @@ function setEditMode(m) {
   // In verkeersmodus geen tussenpunt-markers (wel de routes zelf);
   // in route- en vastlegmodus zijn alle punten zichtbaar en aanklikbaar.
   for (let day = 1; day <= 4; day++) {
+    if (!days[day]) continue;
     days[day].markers.forEach((mk) => (m === 'vr' ? mk.remove() : mk.addTo(map)));
   }
   refreshVrLayer();
