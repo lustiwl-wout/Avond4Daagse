@@ -259,9 +259,110 @@ function computeDefaultDay(eventSetting) {
 // --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
 
 const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (https://github.com/lustiwl-wout/Avond4Daagse)';
-const OSRM_PROFILES = {
-  foot: 'https://routing.openstreetmap.de/routed-foot',
-};
+
+// --- Wandelroutes: meerdere diensten met automatische terugval ---
+// Elke backend geeft { path, distance_m } terug, `null` als er écht geen
+// wandelroute tussen de punten bestaat, en gooit bij een dienststoring.
+
+async function osrmFootRoute(points) {
+  const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
+  const url = `https://routing.openstreetmap.de/routed-foot/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
+  const resp = await fetch(url, { headers: { 'User-Agent': OSM_UA }, signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`OSRM gaf status ${resp.status}`);
+  const data = await resp.json();
+  if (data.code !== 'Ok' || !data.routes || !data.routes[0]) return null;
+  const route = data.routes[0];
+  return {
+    path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+    distance_m: Math.round(route.distance),
+  };
+}
+
+// Polyline-decoder (Valhalla gebruikt precisie 6).
+function decodePolyline6(str) {
+  const points = [];
+  let index = 0;
+  let lat = 0;
+  let lng = 0;
+  while (index < str.length) {
+    for (const key of ['lat', 'lng']) {
+      let shift = 0;
+      let result = 0;
+      let b;
+      do {
+        b = str.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (key === 'lat') lat += delta;
+      else lng += delta;
+    }
+    points.push({ lat: lat / 1e6, lng: lng / 1e6 });
+  }
+  return points;
+}
+
+async function valhallaFootRoute(points) {
+  const body = {
+    costing: 'pedestrian',
+    locations: points.map((p, i) => ({
+      lat: p.lat,
+      lon: p.lng,
+      type: i === 0 || i === points.length - 1 ? 'break' : 'through',
+    })),
+  };
+  const resp = await fetch('https://valhalla1.openstreetmap.de/route', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'User-Agent': OSM_UA },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (resp.status === 400) return null; // geen route mogelijk tussen deze punten
+  if (!resp.ok) throw new Error(`Valhalla gaf status ${resp.status}`);
+  const data = await resp.json();
+  const legs = data.trip && data.trip.legs;
+  if (!legs || legs.length === 0) return null;
+  const path = [];
+  for (const leg of legs) {
+    for (const pt of decodePolyline6(leg.shape)) {
+      const last = path[path.length - 1];
+      if (!last || last.lat !== pt.lat || last.lng !== pt.lng) path.push(pt);
+    }
+  }
+  return { path, distance_m: Math.round(data.trip.summary.length * 1000) };
+}
+
+// OpenRouteService: optioneel, met eigen (gratis) API-key — onafhankelijk
+// van de publieke OSM-servers en daarmee de betrouwbaarste optie.
+async function orsFootRoute(points) {
+  const resp = await fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: process.env.ORS_API_KEY,
+      'User-Agent': OSM_UA,
+    },
+    body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (resp.status === 404) return null; // geen route mogelijk
+  if (!resp.ok) throw new Error(`OpenRouteService gaf status ${resp.status}`);
+  const data = await resp.json();
+  const feature = data.features && data.features[0];
+  if (!feature) return null;
+  return {
+    path: feature.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+    distance_m: Math.round(feature.properties.summary.distance),
+  };
+}
+
+function footRouteBackends() {
+  const backends = [];
+  if (process.env.ORS_API_KEY) backends.push(['OpenRouteService', orsFootRoute]);
+  backends.push(['OSRM', osrmFootRoute], ['Valhalla', valhallaFootRoute]);
+  return backends;
+}
 
 const geoCache = new Map();
 let geoChain = Promise.resolve();
@@ -519,40 +620,30 @@ eventApi.put('/admin/pause/:day', async (req, res) => {
   }
 });
 
-// Route berekenen via OSRM (voetprofiel, kent alle wandel- en fietspaden).
+// Wandelroute berekenen; probeert de routediensten één voor één tot er
+// eentje antwoordt. 422 = er bestaat echt geen wandelroute via deze punten;
+// 502 = geen van de diensten was bereikbaar.
 eventApi.post('/admin/route', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const { profile, points } = req.body || {};
-  const base = OSRM_PROFILES[profile];
-  if (!base) return res.status(400).json({ error: 'Onbekend routeprofiel.' });
+  if (profile !== 'foot') return res.status(400).json({ error: 'Onbekend routeprofiel.' });
   if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
     return res.status(400).json({ error: 'Ongeldige routepunten.' });
   }
-  try {
-    const coords = points.map((p) => `${p.lng.toFixed(6)},${p.lat.toFixed(6)}`).join(';');
-    const url = `${base}/route/v1/driving/${coords}?overview=full&geometries=geojson&steps=false`;
-    const resp = await fetch(url, {
-      headers: { 'User-Agent': OSM_UA },
-      signal: AbortSignal.timeout(15000),
-    });
-    const data = await resp.json().catch(() => ({}));
-    if (!resp.ok || data.code !== 'Ok' || !data.routes || !data.routes[0]) {
-      return res.status(422).json({ error: 'Geen route mogelijk via deze punten.' });
+  for (const [name, backend] of footRouteBackends()) {
+    try {
+      const route = await backend(points);
+      if (route === null) {
+        return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
+      }
+      return res.json(route);
+    } catch (err) {
+      console.error(`Routeservice ${name} faalde:`, err.message);
     }
-    const route = data.routes[0];
-    res.json({
-      path: route.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-      distance_m: Math.round(route.distance),
-      duration_s: Math.round(route.duration),
-      legs: route.legs.map((l) => ({
-        distance_m: Math.round(l.distance),
-        duration_s: Math.round(l.duration),
-      })),
-    });
-  } catch (err) {
-    console.error('OSRM-route mislukt:', err);
-    res.status(502).json({ error: 'Routeservice tijdelijk niet bereikbaar, probeer het zo opnieuw.' });
   }
+  res.status(502).json({
+    error: 'Geen van de routediensten is bereikbaar — probeer het over een paar minuten opnieuw.',
+  });
 });
 
 // Publiek: alle dagroutes.

@@ -59,7 +59,7 @@ npm start              # http://localhost:3000
 ## Kaarten en routes: OpenStreetMap — Google alleen voor Street View
 
 - **Kaartweergave**: Leaflet met OpenStreetMap-tegels (gratis, geen key).
-- **Routes**: OSRM via de routers van openstreetmap.org (voetprofiel) voor de wandelroute.
+- **Routes**: wandelroutes via OSRM (voetprofiel) met automatische terugval op Valhalla. Zet bij voorkeur ook een gratis key van [openrouteservice.org](https://openrouteservice.org) in de omgevingsvariabele `ORS_API_KEY`: dan rekent die dienst met eigen quotum de routes uit en ben je niet afhankelijk van de (soms overbelaste of afgeschermde) publieke OSM-servers.
 - **Adressen en straatnamen**: Nominatim (server-side, met cache en nette throttling).
 - **Street View**: het enige Google-onderdeel. Overlay-panorama op de kaartpagina's en foto's vanuit vier windrichtingen op de printversie.
 

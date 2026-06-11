@@ -14,3 +14,5 @@ services:
         sync: false # master-wachtwoord van de platformbeheerder (werkt op elk event; optioneel)
       - key: BASE_DOMAIN
         sync: false # eigen domein voor subdomeinen per event, bv. a4droute.nl (optioneel)
+      - key: ORS_API_KEY
+        sync: false # gratis key van openrouteservice.org voor wandelroutes met eigen quotum (aanbevolen)

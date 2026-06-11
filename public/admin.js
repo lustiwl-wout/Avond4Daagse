@@ -262,16 +262,21 @@ async function addPoint(day, point, index = null) {
   addMarker(day, point, index);
   relabelMarkers(day);
   const status = await updateRoute(day);
-  if (status === 'FAIL') {
-    // Geen wandelroute mogelijk via dit punt: direct weer terugdraaien.
+  if (status === 'NOROUTE' || status === 'FAIL') {
+    // Mislukt: punt terugdraaien. De lijn is niet aangepast (de berekening
+    // faalde vóór het tekenen), dus opnieuw berekenen is niet nodig.
     d.points.splice(index, 1);
     d.markers[index].remove();
     d.markers.splice(index, 1);
     relabelMarkers(day);
-    await updateRoute(day);
-    setSaveStatus(
-      'Let op: daar kan geen wandelroute langs — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of pad.'
-    );
+    updateInfo();
+    if (status === 'NOROUTE') {
+      setSaveStatus(
+        'Let op: daar kan geen wandelroute langs — het punt is niet toegevoegd. Kies een plek op of vlak naast een straat of pad.',
+        true
+      );
+    }
+    // Bij FAIL staat de storingsmelding van updateRoute er al.
   } else {
     scheduleDraftSave(day);
   }
@@ -301,12 +306,13 @@ function addMarker(day, point, index) {
     const ll = marker.getLatLng();
     d.points[i] = { lat: ll.lat, lng: ll.lng };
     const status = await updateRoute(day);
-    if (status === 'FAIL') {
-      // Geen wandelroute mogelijk: punt terug naar de vorige plek.
+    if (status === 'NOROUTE' || status === 'FAIL') {
+      // Mislukt: punt terug naar de vorige plek (de lijn is niet aangepast).
       d.points[i] = previous;
       marker.setLatLng([previous.lat, previous.lng]);
-      await updateRoute(day);
-      setSaveStatus('Let op: daar kan geen wandelroute langs — het punt is teruggezet.');
+      if (status === 'NOROUTE') {
+        setSaveStatus('Let op: daar kan geen wandelroute langs — het punt is teruggezet.', true);
+      }
     } else {
       scheduleDraftSave(day);
     }
@@ -361,14 +367,23 @@ function openPointMenu(day, marker) {
 
 // --- Route berekenen via OSRM: altijd lopend, van en naar start/finish ---
 async function osrmRoute(profile, points) {
-  const res = await fetch(api('/admin/route'), {
-    method: 'POST',
-    headers: adminHeaders(true),
-    body: JSON.stringify({ profile, points }),
-  });
+  let res;
+  try {
+    res = await fetch(api('/admin/route'), {
+      method: 'POST',
+      headers: adminHeaders(true),
+      body: JSON.stringify({ profile, points }),
+      signal: AbortSignal.timeout(40000),
+    });
+  } catch {
+    throw new Error('Routeservice niet bereikbaar — controleer je verbinding en probeer het opnieuw.');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || 'Routeservice niet bereikbaar.');
+    const e = new Error(err.error || 'Routeservice niet bereikbaar.');
+    // 422 = er bestaat echt geen wandelroute; al het andere is een storing.
+    e.noRoute = res.status === 422;
+    throw e;
   }
   return res.json();
 }
@@ -385,6 +400,7 @@ async function updateRoute(day) {
     updateInfo();
     return 'EMPTY';
   }
+  setSaveStatus('Wandelroute berekenen…', true);
   try {
     const r = await osrmRoute('foot', [startFinish, ...d.points, startFinish]);
     d.path = r.path;
@@ -395,12 +411,13 @@ async function updateRoute(day) {
     d.arrows = directionArrows(r.path, DAY_COLORS[day]);
     updateDayVisibility();
     updateInfo();
+    setSaveStatus('');
     return 'OK';
   } catch (err) {
     console.error('Route berekenen mislukt:', err);
-    setSaveStatus('Let op: ' + err.message);
+    setSaveStatus('Let op: ' + err.message, !err.noRoute);
     updateInfo();
-    return 'FAIL';
+    return err.noRoute ? 'NOROUTE' : 'FAIL';
   }
 }
 
