@@ -234,19 +234,16 @@ async function openStreetView(lat, lng) {
     svOverlay.querySelector('.sv-close').addEventListener('click', () => {
       svOverlay.classList.add('hidden');
     });
-    svPano = new google.maps.StreetViewPanorama(svOverlay.querySelector('.sv-pano'), {
-      position: { lat, lng },
-      pov: { heading: 0, pitch: 0 },
-    });
   }
-  // Eerst tonen en een resize-signaal geven; een positie-update terwijl het
-  // paneel verborgen is verwerkt Google niet, waardoor je anders bij een
-  // tweede keer openen nog het vorige punt ziet.
+  // Altijd een vers panorama in een zichtbare overlay: hergebruik van het
+  // panorama gaf een zwart eerste beeld en verouderde beelden daarna.
   svOverlay.classList.remove('hidden');
-  google.maps.event.trigger(svPano, 'resize');
-  svPano.setPosition({ lat, lng });
-  svPano.setPov({ heading: 0, pitch: 0 });
-  svPano.setVisible(true);
+  const panoDiv = svOverlay.querySelector('.sv-pano');
+  panoDiv.innerHTML = '';
+  svPano = new google.maps.StreetViewPanorama(panoDiv, {
+    position: { lat, lng },
+    pov: { heading: 0, pitch: 0 },
+  });
 }
 
 // Hulpfunctie voor menuknoppen.
