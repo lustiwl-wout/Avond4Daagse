@@ -7,6 +7,7 @@ const NL_CENTER = { lat: 52.2, lng: 5.3 };
 let map;
 let selectedDay = 1;
 let selectedTeam = 'all';
+const TEAM_KEY = `a4d-verkeer-team-${SLUG}`;
 let startFinish = null;
 let eventSchedule = null; // per dag {date, time}
 let vrSettings = { walkKmh: 4, passMin: 8 };
@@ -82,6 +83,14 @@ async function loadData() {
     opt.textContent = t.name;
     select.appendChild(opt);
   }
+
+  // Eerder gekozen team onthouden (per event), zodat een verkeersregelaar
+  // niet elke keer opnieuw hoeft te kiezen.
+  const saved = localStorage.getItem(TEAM_KEY);
+  if (saved && teams.some((t) => String(t.id) === saved)) {
+    select.value = saved;
+    selectedTeam = saved;
+  }
 }
 
 function teamById(id) {
@@ -99,6 +108,8 @@ document.querySelectorAll('.day-tab').forEach((tab) => {
 
 document.getElementById('vr-team').addEventListener('change', (e) => {
   selectedTeam = e.target.value;
+  if (selectedTeam === 'all') localStorage.removeItem(TEAM_KEY);
+  else localStorage.setItem(TEAM_KEY, selectedTeam);
   refreshView();
 });
 
