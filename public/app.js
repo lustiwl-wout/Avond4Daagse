@@ -53,6 +53,7 @@ async function init() {
   }
 
   await loadRoutes();
+  loadWeather();
 }
 
 async function loadRoutes() {
@@ -138,6 +139,61 @@ function showAnnouncement(text) {
   el.classList.toggle('hidden', !text);
 }
 
+// Weersverwachting per loopdag (Open-Meteo, zonder key). Alleen voor
+// datums binnen het voorspelbereik (~16 dagen).
+const weatherByDate = {};
+
+const WEATHER_WORDS = [
+  [[0], 'zonnig'], [[1, 2], 'licht bewolkt'], [[3], 'bewolkt'],
+  [[45, 48], 'mist'], [[51, 53, 55, 56, 57], 'motregen'],
+  [[61, 63, 65, 66, 67], 'regen'], [[71, 73, 75, 77, 85, 86], 'sneeuw'],
+  [[80, 81, 82], 'buien'], [[95, 96, 99], 'onweer'],
+];
+
+function weatherWord(code) {
+  const hit = WEATHER_WORDS.find(([codes]) => codes.includes(code));
+  return hit ? hit[1] : '';
+}
+
+async function loadWeather() {
+  if (!startFinish || !schedule) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const max = new Date(Date.now() + 15 * 86400000).toISOString().slice(0, 10);
+  const dates = Object.values(schedule)
+    .map((e) => e && e.date)
+    .filter((d) => d && d >= today && d <= max)
+    .sort();
+  if (dates.length === 0) return;
+  try {
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${startFinish.lat}&longitude=${startFinish.lng}` +
+      `&daily=weather_code,temperature_2m_max,precipitation_probability_max` +
+      `&timezone=Europe%2FAmsterdam&start_date=${dates[0]}&end_date=${dates[dates.length - 1]}`;
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+    const d = data.daily || {};
+    (d.time || []).forEach((date, i) => {
+      weatherByDate[date] = {
+        word: weatherWord(d.weather_code[i]),
+        temp: Math.round(d.temperature_2m_max[i]),
+        rain: d.precipitation_probability_max[i],
+      };
+    });
+    renderDistanceList();
+  } catch {
+    // weer is een extraatje
+  }
+}
+
+function weatherText(day) {
+  const e = schedule && schedule[day];
+  const w = e && e.date && weatherByDate[e.date];
+  if (!w) return '';
+  const rain = w.rain != null && w.rain >= 20 ? ` · ${w.rain}% regen` : '';
+  return `${w.word ? w.word + ', ' : ''}${w.temp}°${rain}`;
+}
+
 function formatDayDate(day) {
   const e = schedule && schedule[day];
   if (!e || !e.date) return '';
@@ -157,7 +213,8 @@ function renderDistanceList() {
     const km = routes[day] && routes[day].distance_m
       ? (routes[day].distance_m / 1000).toFixed(1).replace('.', ',') + ' km'
       : 'nog geen route';
-    const when = formatDayDate(day);
+    const weather = weatherText(day);
+    const when = formatDayDate(day) + (weather ? `<br>${weather}` : '');
     const gpx = routes[day]
       ? ` · <a class="gpx-link" href="${api(`/gpx/${day}`)}" download>GPX</a>`
       : '';
@@ -306,6 +363,8 @@ function openSponsorForm(hit) {
 // zo springt de teller niet heen en weer.
 const ON_ROUTE_M = 60;
 let progressAlong = null;
+// Recente (tijd, positie-langs-route)-metingen voor het eigen wandeltempo.
+let paceSamples = [];
 
 function routeProgress(path, pos) {
   const candidates = [];
@@ -383,6 +442,7 @@ function updateProgress(pos) {
   if (!pos || !r) {
     box.classList.add('hidden');
     progressAlong = null;
+    paceSamples = [];
     updateWalkedLine(null, null);
     return;
   }
@@ -391,6 +451,7 @@ function updateProgress(pos) {
     // Naast de route (bv. onderweg ernaartoe): geen voortgang tonen.
     box.classList.add('hidden');
     progressAlong = null;
+    paceSamples = [];
     updateWalkedLine(null, null);
     return;
   }
@@ -403,8 +464,27 @@ function updateProgress(pos) {
   if (r.pauseAlong !== null && r.pauseAlong - along > 25) {
     text += ` · pauze over ${fmtDist(r.pauseAlong - along)}`;
   }
+  const eta = expectedFinish(along, left);
+  if (eta) text += ` · verwachte finish ${eta}`;
   document.getElementById('progress-text').textContent = text;
   box.classList.remove('hidden');
+}
+
+// Verwachte finishtijd uit het eigen, recent gemeten wandeltempo (laatste
+// 10 minuten). Pas tonen na 2 minuten en 100 m voortgang, en alleen bij
+// een geloofwaardig tempo.
+function expectedFinish(along, left) {
+  const now = Date.now();
+  paceSamples.push({ t: now, along });
+  paceSamples = paceSamples.filter((s) => now - s.t <= 10 * 60 * 1000);
+  const first = paceSamples[0];
+  const dt = (now - first.t) / 1000;
+  const dAlong = along - first.along;
+  if (dt < 120 || dAlong < 100) return null;
+  const speed = dAlong / dt; // m/s
+  if (speed < 0.2 || speed > 3) return null;
+  const finish = new Date(now + (left / speed) * 1000);
+  return `${String(finish.getHours()).padStart(2, '0')}:${String(finish.getMinutes()).padStart(2, '0')}`;
 }
 
 function selectDayTab(day) {
@@ -415,6 +495,7 @@ function selectDayTab(day) {
   applySelection();
   // Voortgang hoort bij de gekozen dag: opnieuw bepalen met de huidige positie.
   progressAlong = null;
+  paceSamples = [];
   if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
 }
 
