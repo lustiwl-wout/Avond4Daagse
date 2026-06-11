@@ -1501,10 +1501,10 @@ document.getElementById('announce-save').addEventListener('click', async () => {
 function renderQrCodes() {
   if (typeof qrcode !== 'function') return; // bibliotheek niet geladen
   const targets = [
-    ['qr-home', location.origin + eventUrl('')],
-    ['qr-verkeer', location.origin + eventUrl('/verkeer')],
+    ['qr-home', location.origin + eventUrl(''), `a4d-${SLUG}-bezoekers.png`],
+    ['qr-verkeer', location.origin + eventUrl('/verkeer'), `a4d-${SLUG}-verkeersregelaars.png`],
   ];
-  for (const [id, url] of targets) {
+  for (const [id, url, filename] of targets) {
     const el = document.getElementById(id);
     if (!el || el.childNodes.length > 0) continue;
     const qr = qrcode(0, 'M');
@@ -1515,7 +1515,42 @@ function renderQrCodes() {
     link.className = 'route-meta';
     link.textContent = url.replace(/^https?:\/\//, '');
     el.appendChild(link);
+    const btn = menuButton('Download PNG', () => downloadQrPng(el.querySelector('svg'), filename));
+    btn.className = 'qr-download';
+    el.appendChild(btn);
   }
+}
+
+// SVG-QR omzetten naar een drukklare PNG (1024×1024, witte achtergrond).
+function downloadQrPng(svgEl, filename) {
+  if (!svgEl) return;
+  const SIZE = 1024;
+  const clone = svgEl.cloneNode(true);
+  clone.setAttribute('width', SIZE);
+  clone.setAttribute('height', SIZE);
+  const blobUrl = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(clone)], { type: 'image/svg+xml' })
+  );
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = SIZE;
+    canvas.height = SIZE;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.drawImage(img, 0, 0, SIZE, SIZE);
+    URL.revokeObjectURL(blobUrl);
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = filename;
+    a.click();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(blobUrl);
+    setSaveStatus('Let op: PNG maken mislukt in deze browser.');
+  };
+  img.src = blobUrl;
 }
 
 // --- Beheerwachtwoord wijzigen ---
