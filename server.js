@@ -1172,7 +1172,17 @@ eventApi.put('/admin/crossings/:day/:id', async (req, res) => {
         c.teams = teams;
         c.team = teams[0] ?? null;
       }
-      if (typeof body.name === 'string') c.name = body.name.slice(0, 120);
+      // Een handmatig gekozen naam (customName) kan alleen door een nieuwe
+      // handmatige naam worden vervangen — nooit door de automatische
+      // opzoeking.
+      if (
+        typeof body.name === 'string' &&
+        body.name.trim() &&
+        (body.custom === true || !c.customName)
+      ) {
+        c.name = body.name.trim().slice(0, 120);
+        if (body.custom === true) c.customName = true;
+      }
       return list;
     });
     if (out.error) return res.status(out.status).json({ error: out.error });

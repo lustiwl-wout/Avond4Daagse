@@ -225,7 +225,9 @@ async function fillAddresses() {
       if (!res.ok) throw new Error();
       const data = await res.json();
       document.querySelectorAll(`[data-post="${p.nr}"]`).forEach((el) => (el.textContent = data.address));
-      if (data.road) {
+      // Handmatig gekozen namen blijven staan; alleen automatische namen
+      // worden ververst met de actuele opzoeking.
+      if (data.road && !p.customName) {
         document
           .querySelectorAll(`[data-post-name="${p.nr}"]`)
           .forEach((el) => (el.textContent = data.road));

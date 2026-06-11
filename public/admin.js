@@ -1083,7 +1083,10 @@ async function addManualCrossing(clicked) {
       });
       if (!res.ok) throw new Error();
       const { road } = await res.json();
-      if (road) {
+      // Alleen bijschrijven zolang het punt nog zijn standaardnaam heeft —
+      // een ondertussen handmatig gekozen naam blijft staan.
+      const current = days[day].crossings.find((x) => x.id === data.crossing.id);
+      if (road && current && current.name === 'oversteekpunt' && !current.customName) {
         await crossingRequest(day, 'PUT', `/${encodeURIComponent(data.crossing.id)}`, {
           name: road,
         });
@@ -1200,6 +1203,29 @@ function openCrossingMenu(c, marker) {
   const title = document.createElement('strong');
   title.textContent = `Oversteek: ${c.name}`;
   div.appendChild(title);
+
+  // Naam aanpassen — een handmatige naam wordt daarna nooit meer
+  // overschreven door de automatische opzoeking of de printversie.
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.value = c.name;
+  nameInput.maxLength = 120;
+  nameInput.placeholder = 'Naam van deze plek';
+  div.appendChild(nameInput);
+  const saveName = async () => {
+    const name = nameInput.value.trim();
+    if (!name || name === c.name) return;
+    map.closePopup();
+    const ok = await crossingRequest(currentDay, 'PUT', `/${encodeURIComponent(c.id)}`, {
+      name,
+      custom: true,
+    });
+    if (ok) setVrStatus(`Punt hernoemd naar "${name}".`);
+  };
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveName();
+  });
+  div.appendChild(menuButton('Naam opslaan', saveName));
 
   // Maximaal twee teams per punt (voor grote kruisingen).
   const assigned = crossingTeams(c);
