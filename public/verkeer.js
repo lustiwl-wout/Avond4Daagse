@@ -19,6 +19,11 @@ async function init() {
   const config = await res.json();
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
+  // Standaard de eerstvolgende loopdag tonen.
+  selectedDay = Number(config.defaultDay || 1);
+  document.querySelectorAll('.day-tab').forEach((tab) => {
+    tab.classList.toggle('active', Number(tab.dataset.day) === selectedDay);
+  });
 
   map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
 

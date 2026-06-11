@@ -5,6 +5,7 @@ const ALMERE_CENTER = { lat: 52.3508, lng: 5.2647 };
 
 let map;
 let selectedDay = 1;
+let schedule = null; // per dag {date, time}
 let startFinish = null;
 let sponsorOpen = false;
 let sponsorPlacing = false;
@@ -19,6 +20,9 @@ async function init() {
   startFinish = config.startFinish;
   sponsorOpen = !!config.sponsorOpen;
   if (sponsorOpen) document.getElementById('sponsor-section').classList.remove('hidden');
+  schedule = config.schedule || null;
+  // Standaard de eerstvolgende loopdag tonen.
+  selectDayTab(config.defaultDay || 1);
 
   map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
   map.on('click', onMapClick);
@@ -116,6 +120,17 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+function formatDayDate(day) {
+  const e = schedule && schedule[day];
+  if (!e || !e.date) return '';
+  const txt = new Intl.DateTimeFormat('nl-NL', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(e.date + 'T12:00:00'));
+  return e.time ? `${txt} · ${e.time} uur` : txt;
+}
+
 function renderDistanceList() {
   const list = document.getElementById('distance-list');
   list.innerHTML = '';
@@ -124,7 +139,10 @@ function renderDistanceList() {
     const km = routes[day] && routes[day].distance_m
       ? (routes[day].distance_m / 1000).toFixed(1).replace('.', ',') + ' km'
       : 'nog geen route';
-    li.innerHTML = `<span><span class="day-dot" style="background:${DAY_COLORS[day]}"></span>Dag ${day}</span><strong>${km}</strong>`;
+    const when = formatDayDate(day);
+    li.innerHTML = `<span><span class="day-dot" style="background:${DAY_COLORS[day]}"></span>Dag ${day}${
+      when ? `<br><span class="route-meta">${when}</span>` : ''
+    }</span><strong>${km}</strong>`;
     list.appendChild(li);
   }
 }
@@ -256,13 +274,16 @@ function openSponsorForm(hit) {
   openMapMenu(map, [hit.lat, hit.lng], div);
 }
 
-document.querySelectorAll('.day-tab').forEach((tab) => {
-  tab.addEventListener('click', () => {
-    document.querySelector('.day-tab.active').classList.remove('active');
-    tab.classList.add('active');
-    selectedDay = Number(tab.dataset.day);
-    applySelection();
+function selectDayTab(day) {
+  selectedDay = Number(day);
+  document.querySelectorAll('.day-tab').forEach((tab) => {
+    tab.classList.toggle('active', Number(tab.dataset.day) === selectedDay);
   });
+  applySelection();
+}
+
+document.querySelectorAll('.day-tab').forEach((tab) => {
+  tab.addEventListener('click', () => selectDayTab(tab.dataset.day));
 });
 
 setupGps(() => map);

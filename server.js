@@ -154,10 +154,33 @@ function todayNl() {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(new Date());
 }
 
+// Loopdagen gesorteerd op datum: [{day, date, time}].
+function scheduleEntries(event) {
+  const days = (event && event.days) || {};
+  return [1, 2, 3, 4]
+    .filter((d) => days[d] && days[d].date)
+    .map((d) => ({ day: d, date: days[d].date, time: days[d].time || null }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Sponsoraanmelding staat open tot de eerste loopdag.
 async function isSponsorOpen() {
   const event = await getSetting('event');
-  if (!event || !event.startDate) return false;
-  return todayNl() < event.startDate;
+  const entries = scheduleEntries(event);
+  if (entries.length > 0) return todayNl() < entries[0].date;
+  // oudere instelling: één losse startdatum
+  if (event && event.startDate) return todayNl() < event.startDate;
+  return false;
+}
+
+// Standaard te tonen dag: de eerstvolgende loopdag (vandaag telt mee);
+// zijn alle dagen voorbij, dan de laatste; zonder datums dag 1.
+function computeDefaultDay(event) {
+  const entries = scheduleEntries(event);
+  if (entries.length === 0) return 1;
+  const today = todayNl();
+  const upcoming = entries.find((e) => e.date >= today);
+  return upcoming ? upcoming.day : entries[entries.length - 1].day;
 }
 
 // Publieke configuratie: Street View-key, start/finish-punt (zonder adres),
@@ -179,30 +202,42 @@ app.get('/api/config', async (req, res) => {
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
     startFinish,
     vrSettings,
-    eventStart: event ? event.startDate : null,
+    schedule: (event && event.days) || null,
+    defaultDay: computeDefaultDay(event),
     sponsorOpen,
   });
 });
 
-// Admin: eerste loopdag instellen; tot die datum staat de sponsoractie-
-// aanmelding op de bezoekerspagina open.
-app.put('/api/admin/event-date', async (req, res) => {
+// Admin: datum en starttijd per loopdag instellen. De vroegste datum is de
+// eerste loopdag (tot dan staat de sponsoraanmelding open) en de site toont
+// standaard de eerstvolgende dag.
+app.put('/api/admin/event-schedule', async (req, res) => {
   if (!requireDb(res)) return;
   if (!requireAdmin(req, res)) return;
-  const { startDate } = req.body || {};
-  if (startDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(startDate))) {
-    return res.status(400).json({ error: 'Ongeldige datum.' });
+  const { days } = req.body || {};
+  if (!days || typeof days !== 'object') return res.status(400).json({ error: 'Ongeldige planning.' });
+  const cleaned = {};
+  for (const d of [1, 2, 3, 4]) {
+    const entry = days[d] || days[String(d)];
+    if (!entry || !entry.date) continue;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(entry.date))) {
+      return res.status(400).json({ error: `Ongeldige datum bij dag ${d}.` });
+    }
+    if (entry.time && !/^\d{2}:\d{2}$/.test(String(entry.time))) {
+      return res.status(400).json({ error: `Ongeldige tijd bij dag ${d}.` });
+    }
+    cleaned[d] = { date: entry.date, time: entry.time || null };
   }
   try {
     await pool.query(
       `INSERT INTO settings (key, value, updated_at) VALUES ('event', $1, now())
        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
-      [JSON.stringify({ startDate })]
+      [JSON.stringify({ days: cleaned })]
     );
     res.status(204).end();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Datum opslaan mislukt.' });
+    res.status(500).json({ error: 'Planning opslaan mislukt.' });
   }
 });
 

@@ -13,7 +13,7 @@ let map;
 let currentDay = 1;
 let editMode = 'route'; // 'route' | 'rec' | 'vr'
 let pausePlacing = false;
-let eventStart = null;
+let schedule = null; // per dag {date, time}
 let sponsors = [];
 let sponsorLayers = [];
 let loggedIn = false;
@@ -80,7 +80,7 @@ async function init() {
   const config = await res.json();
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
-  eventStart = config.eventStart || null;
+  schedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
 
   map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
@@ -491,25 +491,37 @@ function drawPauseMarker(day) {
   });
 }
 
-// --- Sponsoracties: aanmeldingen inzien en evenementdatum instellen ---
+// --- Loopdagen: datum en starttijd per dag ---
 function initEventInput() {
-  const input = document.getElementById('set-event');
-  if (eventStart) input.value = eventStart;
-  input.addEventListener('change', async () => {
-    eventStart = input.value || null;
-    const res = await fetch('/api/admin/event-date', {
-      method: 'PUT',
-      headers: adminHeaders(true),
-      body: JSON.stringify({ startDate: eventStart }),
-    });
-    setVrStatus(
-      res.ok
-        ? eventStart
-          ? `Eerste loopdag ingesteld op ${eventStart}; tot die dag staat de sponsoraanmelding open.`
-          : 'Eerste loopdag gewist — de sponsoraanmelding staat nu uit.'
-        : 'Let op: datum opslaan mislukt.'
-    );
-  });
+  for (let day = 1; day <= 4; day++) {
+    const dateInput = document.getElementById(`set-date-${day}`);
+    const timeInput = document.getElementById(`set-time-${day}`);
+    const entry = schedule && schedule[day] ? schedule[day] : null;
+    if (entry) {
+      dateInput.value = entry.date || '';
+      timeInput.value = entry.time || '';
+    }
+    const save = async () => {
+      schedule = schedule || {};
+      if (dateInput.value) {
+        schedule[day] = { date: dateInput.value, time: timeInput.value || null };
+      } else {
+        delete schedule[day];
+      }
+      const res = await fetch('/api/admin/event-schedule', {
+        method: 'PUT',
+        headers: adminHeaders(true),
+        body: JSON.stringify({ days: schedule }),
+      });
+      setSaveStatus(
+        res.ok
+          ? 'Loopdagen opgeslagen — bezoekers zien standaard de eerstvolgende dag.'
+          : 'Let op: loopdagen opslaan mislukt.'
+      );
+    };
+    dateInput.addEventListener('change', save);
+    timeInput.addEventListener('change', save);
+  }
 }
 
 async function loadSponsors() {
