@@ -14,7 +14,17 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 // index: false — '/' beslist zelf (landing of, op een subdomein, het event).
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+// Cache-Control: no-cache — de browser mag bestanden bewaren maar moet ze
+// bij elke paginalading even bij de server controleren (ETag). Zonder dit
+// blijven browsers na een deploy dagenlang oude JS/CSS gebruiken.
+app.use(
+  express.static(path.join(__dirname, 'public'), {
+    index: false,
+    setHeaders(res) {
+      res.setHeader('Cache-Control', 'no-cache');
+    },
+  })
+);
 
 const sha256 = (s) => crypto.createHash('sha256').update(String(s)).digest('hex');
 
@@ -1046,7 +1056,9 @@ async function eventExists(slug) {
 }
 
 function sendPage(res, file) {
-  res.sendFile(path.join(__dirname, 'public', file));
+  res.sendFile(path.join(__dirname, 'public', file), {
+    headers: { 'Cache-Control': 'no-cache' },
+  });
 }
 
 app.get('/', async (req, res) => {
