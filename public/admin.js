@@ -1345,6 +1345,31 @@ function openCrossingMenu(c, marker) {
 let stoetWatchId = null;
 let stoetDay = null;
 let stoetLastSent = 0;
+let stoetWakeLock = null;
+
+// Browsers pauzeren GPS zodra het scherm vergrendelt; houd het scherm
+// daarom wakker zolang het delen aanstaat (waar de browser dat kan).
+async function stoetKeepAwake(on) {
+  try {
+    if (on && 'wakeLock' in navigator && !stoetWakeLock) {
+      stoetWakeLock = await navigator.wakeLock.request('screen');
+      stoetWakeLock.addEventListener('release', () => {
+        stoetWakeLock = null;
+      });
+    } else if (!on && stoetWakeLock) {
+      await stoetWakeLock.release();
+      stoetWakeLock = null;
+    }
+  } catch {
+    // zonder wake lock werkt het delen ook — alleen niet met scherm uit
+  }
+}
+
+// Komt de pagina terug in beeld (telefoon ontgrendeld), pak de wake lock
+// dan opnieuw — die wordt door de browser losgelaten bij vergrendelen.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && stoetWatchId !== null) stoetKeepAwake(true);
+});
 
 function setStoetStatus(text) {
   document.getElementById('stoet-status').textContent = text;
@@ -1360,6 +1385,7 @@ function updateStoetBtn() {
 async function stopStoet() {
   if (stoetWatchId !== null) navigator.geolocation.clearWatch(stoetWatchId);
   stoetWatchId = null;
+  stoetKeepAwake(false);
   setStoetStatus('');
   if (stoetDay !== null) {
     await fetch(api(`/admin/stoet/${stoetDay}`), { method: 'DELETE', headers: adminHeaders() }).catch(
@@ -1381,6 +1407,7 @@ document.getElementById('stoet-btn').addEventListener('click', () => {
   }
   stoetDay = currentDay;
   setStoetStatus('GPS zoeken…');
+  stoetKeepAwake(true);
   stoetWatchId = navigator.geolocation.watchPosition(
     async (position) => {
       // Hooguit elke 10 seconden versturen — vaker heeft geen zin.
@@ -1393,7 +1420,7 @@ document.getElementById('stoet-btn').addEventListener('click', () => {
       }).catch(() => null);
       setStoetStatus(
         res && res.ok
-          ? `Stoetpositie wordt gedeeld (dag ${stoetDay}) — laat dit scherm open.`
+          ? `Stoetpositie wordt gedeeld (dag ${stoetDay}). Houd het scherm aan en de pagina open — bij een vergrendeld scherm stopt de GPS.`
           : 'Let op: positie versturen mislukt, opnieuw aan het proberen…'
       );
     },
