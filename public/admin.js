@@ -1076,9 +1076,38 @@ async function saveCrossings(day) {
 }
 
 // --- Verkeerslaag op de kaart ---
+// Op één plek kunnen meerdere items over elkaar staan (oversteekpunt +
+// conflictpunt). Alle klikbare items melden zich aan in dit register; bij
+// een klik op een plek met meerdere items binnen 20 m verschijnt eerst een
+// keuzemenu.
+let vrClickItems = [];
+
+function openStackedMenu(item) {
+  const nearby = vrClickItems.filter((x) => distM(x, item) < 20);
+  if (nearby.length <= 1) {
+    item.open();
+    return;
+  }
+  const div = document.createElement('div');
+  div.className = 'point-menu';
+  const title = document.createElement('strong');
+  title.textContent = 'Hier staan meerdere items — kies er één:';
+  div.appendChild(title);
+  for (const x of nearby) {
+    div.appendChild(
+      menuButton(x.label, () => {
+        map.closePopup();
+        x.open();
+      })
+    );
+  }
+  openMapMenu(map, [item.lat, item.lng], div);
+}
+
 function refreshVrLayer() {
   vrLayers.forEach((l) => l.remove());
   vrLayers = [];
+  vrClickItems = [];
   if (editMode !== 'vr' || overviewMode) return;
 
   const d = days[currentDay];
@@ -1099,7 +1128,14 @@ function refreshVrLayer() {
       zIndexOffset: 500,
       title: c.name,
     }).addTo(map);
-    marker.on('click', () => openCrossingMenu(c, marker));
+    const item = {
+      lat: c.lat,
+      lng: c.lng,
+      label: `Oversteekpunt ${c.hidden ? '(verborgen)' : visibleIndex}: ${c.name}${team ? ` — ${team.name}` : ''}`,
+      open: () => openCrossingMenu(c, marker),
+    };
+    vrClickItems.push(item);
+    marker.on('click', () => openStackedMenu(item));
     vrLayers.push(marker);
   }
 
@@ -1335,7 +1371,16 @@ function drawTeamRoutes() {
           ? `Goedgekeurde uitzondering: route van ${team.name} kruist hier de wandelroute`
           : `Conflict: route van ${team.name} kruist de wandelroute hier`,
       }).addTo(map);
-      marker.on('click', () => openConflictMenu(team, tr, conflict, marker));
+      const item = {
+        lat: conflict.lat,
+        lng: conflict.lng,
+        label: conflict.approved
+          ? `Goedgekeurde oversteek: route van ${team.name}`
+          : `Conflict: route van ${team.name} kruist de wandelroute`,
+        open: () => openConflictMenu(team, tr, conflict, marker),
+      };
+      vrClickItems.push(item);
+      marker.on('click', () => openStackedMenu(item));
       vrLayers.push(marker);
     }
   }

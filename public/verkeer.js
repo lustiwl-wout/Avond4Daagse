@@ -171,14 +171,17 @@ function refreshView() {
       warnings.push(`Route van ${t.name} doorkruist de wandelroute op ${open.length} plek(ken)!`);
     }
     for (const conflict of tr.conflicts || []) {
+      const text = conflict.approved
+        ? `Let op (${t.name}): hier steek je de wandelroute over — stap af en kijk uit!`
+        : `Conflict: route van ${t.name} kruist de wandelroute`;
       vrLayers.push(
         L.marker([conflict.lat, conflict.lng], {
           icon: conflictIcon(!!conflict.approved),
           zIndexOffset: 1100,
-          title: conflict.approved
-            ? `Let op (${t.name}): hier steek je de wandelroute over — stap af en kijk uit!`
-            : `Conflict: route van ${t.name} kruist de wandelroute`,
-        }).addTo(map)
+          title: text,
+        })
+          .bindPopup(`<div class="point-menu"><strong>${text}</strong></div>`)
+          .addTo(map)
       );
     }
     if (tr.timing && tr.timing.feasible === false) {
