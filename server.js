@@ -709,10 +709,12 @@ eventApi.get('/config', async (req, res) => {
   let startFinish = null;
   let vrSettings = null;
   let eventSetting = null;
+  let announcement = null;
   try {
     startFinish = await getSetting(ev.id, 'start_finish');
     vrSettings = await getSetting(ev.id, 'vr_settings');
     eventSetting = await getSetting(ev.id, 'event');
+    announcement = await getSetting(ev.id, 'announcement');
   } catch (err) {
     console.error('Instellingen ophalen mislukt:', err);
   }
@@ -724,7 +726,61 @@ eventApi.get('/config', async (req, res) => {
     schedule: (eventSetting && eventSetting.days) || null,
     defaultDay: computeDefaultDay(eventSetting),
     sponsorOpen: sponsorOpenFor(eventSetting),
+    announcement: (announcement && announcement.text) || null,
   });
+});
+
+// Mededeling voor bezoekers en verkeersregelaars (lege tekst = weghalen).
+eventApi.put('/admin/announcement', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const text = String((req.body || {}).text || '').trim().slice(0, 500);
+  try {
+    await setSetting(req.event.id, 'announcement', { text });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Mededeling opslaan mislukt.' });
+  }
+});
+
+// GPX-export van de wandelroute van een dag (voor sporthorloges en
+// navigatie-apps).
+eventApi.get('/gpx/:day', async (req, res) => {
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    const { rows } = await pool.query(
+      'SELECT path, waypoints FROM day_routes WHERE event_id = $1 AND day = $2',
+      [req.event.id, day]
+    );
+    const path = rows.length > 0 ? rows[0].path || rows[0].waypoints : null;
+    if (!path || path.length < 2) {
+      return res.status(404).json({ error: 'Geen route voor deze dag.' });
+    }
+    const name = `Avond4Daagse ${req.event.name} — dag ${day}`.replace(/[<>&]/g, '');
+    const points = path
+      .map((p) => `      <trkpt lat="${Number(p.lat).toFixed(6)}" lon="${Number(p.lng).toFixed(6)}"></trkpt>`)
+      .join('\n');
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Avond4Daagse Routeplanner" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>${name}</name>
+    <trkseg>
+${points}
+    </trkseg>
+  </trk>
+</gpx>
+`;
+    res.setHeader('Content-Type', 'application/gpx+xml');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="a4d-${req.event.slug}-dag${day}.gpx"`
+    );
+    res.send(gpx);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'GPX maken mislukt.' });
+  }
 });
 
 // Wachtwoordcontrole voor de adminpagina.

@@ -229,6 +229,30 @@
           <ul id="sponsor-list"><li class="hint">Nog geen aanmeldingen.</li></ul>
         </details>
 
+        <details id="announce-admin">
+          <summary>Mededeling voor bezoekers</summary>
+          <p class="hint">
+            Verschijnt als balk bovenaan de bezoekers- en verkeerspagina —
+            bijvoorbeeld "De start van dag 3 is verplaatst naar 18:30". Leeg
+            maken haalt de balk weg.
+          </p>
+          <textarea id="announce-text" maxlength="500" rows="3" placeholder="Typ hier de mededeling…"></textarea>
+          <button id="announce-save">Mededeling tonen</button>
+        </details>
+
+        <details id="qr-admin">
+          <summary>QR-codes</summary>
+          <p class="hint">
+            Voor op de poster of in de appgroep: links de bezoekerspagina,
+            rechts de verkeersregelaarspagina (die deel je alleen met de
+            verkeersregelaars).
+          </p>
+          <div class="qr-row">
+            <figure><div id="qr-home"></div><figcaption>Bezoekers</figcaption></figure>
+            <figure><div id="qr-verkeer"></div><figcaption>Verkeersregelaars</figcaption></figure>
+          </div>
+        </details>
+
         <details id="password-admin">
           <summary>Beheerwachtwoord wijzigen</summary>
           <p class="hint">
@@ -253,6 +277,7 @@
   </main>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
   <script src="/map-common.js"></script>
   <script src="/gps.js"></script>
   <script src="/admin.js"></script>

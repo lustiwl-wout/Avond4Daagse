@@ -22,6 +22,7 @@ async function init() {
   startFinish = config.startFinish;
   sponsorOpen = !!config.sponsorOpen;
   if (sponsorOpen) document.getElementById('sponsor-section').classList.remove('hidden');
+  showAnnouncement(config.announcement);
   schedule = config.schedule || null;
   // Standaard de eerstvolgende loopdag tonen.
   selectDayTab(config.defaultDay || 1);
@@ -129,6 +130,14 @@ function escapeHtml(s) {
   return div.innerHTML;
 }
 
+// Mededeling van de organisatie als balk onder de header.
+function showAnnouncement(text) {
+  const el = document.getElementById('announce');
+  if (!el) return;
+  el.textContent = text || '';
+  el.classList.toggle('hidden', !text);
+}
+
 function formatDayDate(day) {
   const e = schedule && schedule[day];
   if (!e || !e.date) return '';
@@ -149,9 +158,12 @@ function renderDistanceList() {
       ? (routes[day].distance_m / 1000).toFixed(1).replace('.', ',') + ' km'
       : 'nog geen route';
     const when = formatDayDate(day);
+    const gpx = routes[day]
+      ? ` · <a class="gpx-link" href="${api(`/gpx/${day}`)}" download>GPX</a>`
+      : '';
     li.innerHTML = `<span><span class="day-dot" style="background:${DAY_COLORS[day]}"></span>Dag ${day}${
       when ? `<br><span class="route-meta">${when}</span>` : ''
-    }</span><strong>${km}</strong>`;
+    }</span><span><strong>${km}</strong>${gpx}</span>`;
     list.appendChild(li);
   }
 }

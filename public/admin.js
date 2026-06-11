@@ -136,6 +136,7 @@ async function init() {
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   schedule = config.schedule || null;
+  announcementText = config.announcement || '';
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
 
   document.getElementById('back-link').href = eventUrl('');
@@ -196,6 +197,8 @@ async function tryLogin(pwd) {
       renderTeams();
       initSettingsInputs();
       initEventInput();
+      initAnnouncement();
+      renderQrCodes();
       updateDraftStatus();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -1371,6 +1374,50 @@ function renderTeams() {
     controls.appendChild(delBtn);
     li.appendChild(controls);
     list.appendChild(li);
+  }
+}
+
+// --- Mededeling voor bezoekers en verkeersregelaars ---
+let announcementText = '';
+
+function initAnnouncement() {
+  document.getElementById('announce-text').value = announcementText || '';
+}
+
+document.getElementById('announce-save').addEventListener('click', async () => {
+  const text = document.getElementById('announce-text').value.trim();
+  const res = await fetch(api('/admin/announcement'), {
+    method: 'PUT',
+    headers: adminHeaders(true),
+    body: JSON.stringify({ text }),
+  });
+  if (res.ok) {
+    announcementText = text;
+    setSaveStatus(text ? 'Mededeling staat op de site.' : 'Mededeling weggehaald.');
+  } else {
+    const err = await res.json().catch(() => ({}));
+    setSaveStatus('Let op: ' + (err.error || 'mededeling opslaan mislukt.'));
+  }
+});
+
+// --- QR-codes (bezoekers- en verkeerspagina) ---
+function renderQrCodes() {
+  if (typeof qrcode !== 'function') return; // bibliotheek niet geladen
+  const targets = [
+    ['qr-home', location.origin + eventUrl('')],
+    ['qr-verkeer', location.origin + eventUrl('/verkeer')],
+  ];
+  for (const [id, url] of targets) {
+    const el = document.getElementById(id);
+    if (!el || el.childNodes.length > 0) continue;
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+    const link = document.createElement('span');
+    link.className = 'route-meta';
+    link.textContent = url.replace(/^https?:\/\//, '');
+    el.appendChild(link);
   }
 }
 

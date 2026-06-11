@@ -28,6 +28,11 @@ async function init() {
   startFinish = config.startFinish;
   eventSchedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
+  const announce = document.getElementById('announce');
+  if (announce && config.announcement) {
+    announce.textContent = config.announcement;
+    announce.classList.remove('hidden');
+  }
   // Standaard de eerstvolgende loopdag tonen.
   selectedDay = Number(config.defaultDay || 1);
   document.querySelectorAll('.day-tab').forEach((tab) => {

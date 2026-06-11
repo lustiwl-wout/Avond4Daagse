@@ -451,3 +451,32 @@ details > *:not(summary) { margin-top: 0.5rem; }
   border-radius: var(--radius-pill);
   transition: width 0.6s ease;
 }
+
+/* Mededelingenbalk (admin → bezoekers- en verkeerspagina). */
+.announce {
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #fcd34d;
+  padding: 0.55rem 1rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* QR-codes in de admin. */
+.qr-row { display: flex; gap: 1rem; }
+.qr-row figure { flex: 1; text-align: center; }
+.qr-row svg { width: 100%; max-width: 140px; height: auto; }
+.qr-row .route-meta { display: block; word-break: break-all; margin-top: 0.2rem; }
+.qr-row figcaption { font-size: 0.8rem; font-weight: 600; margin-top: 0.25rem; }
+
+#announce-text {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.55rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+
+.gpx-link { color: var(--brand); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
