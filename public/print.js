@@ -163,6 +163,9 @@ function initMaps() {
   const ov = miniMap('map-overview');
   L.polyline(walkLatLngs, { color: '#1d4ed8', weight: 4 }).addTo(ov);
   addFlag(ov);
+  if (row.pause) {
+    L.marker([row.pause.lat, row.pause.lng], { icon: pauseIcon(), interactive: false }).addTo(ov);
+  }
   for (const p of posts) {
     const t = teams.find((x) => x.id === p.team);
     L.marker([p.lat, p.lng], {

@@ -89,6 +89,21 @@ async function initDb() {
     )
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS route_drafts_day_idx ON route_drafts (day, id DESC)');
+  await pool.query('ALTER TABLE day_routes ADD COLUMN IF NOT EXISTS pause JSONB');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sponsors (
+      id SERIAL PRIMARY KEY,
+      day INTEGER NOT NULL CHECK (day BETWEEN 1 AND 4),
+      lat DOUBLE PRECISION NOT NULL,
+      lng DOUBLE PRECISION NOT NULL,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      action TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
 }
 
 async function getSetting(key) {
@@ -134,14 +149,29 @@ function isValidLatLng(p) {
   return p && typeof p.lat === 'number' && typeof p.lng === 'number';
 }
 
-// Publieke configuratie: Maps-key, start/finish-punt (zonder adres) en
-// planningsinstellingen voor de verkeersregelaars.
+// Datum in Nederland (de eventdatum bepaalt of sponsoracties nog open staan).
+function todayNl() {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Amsterdam' }).format(new Date());
+}
+
+async function isSponsorOpen() {
+  const event = await getSetting('event');
+  if (!event || !event.startDate) return false;
+  return todayNl() < event.startDate;
+}
+
+// Publieke configuratie: Street View-key, start/finish-punt (zonder adres),
+// planningsinstellingen en de eventdatum/sponsorstatus.
 app.get('/api/config', async (req, res) => {
   let startFinish = null;
   let vrSettings = null;
+  let event = null;
+  let sponsorOpen = false;
   try {
     startFinish = await getSetting('start_finish');
     vrSettings = await getSetting('vr_settings');
+    event = await getSetting('event');
+    sponsorOpen = await isSponsorOpen();
   } catch (err) {
     console.error('Instellingen ophalen mislukt:', err);
   }
@@ -149,7 +179,126 @@ app.get('/api/config', async (req, res) => {
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
     startFinish,
     vrSettings,
+    eventStart: event ? event.startDate : null,
+    sponsorOpen,
   });
+});
+
+// Admin: eerste loopdag instellen; tot die datum staat de sponsoractie-
+// aanmelding op de bezoekerspagina open.
+app.put('/api/admin/event-date', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const { startDate } = req.body || {};
+  if (startDate !== null && !/^\d{4}-\d{2}-\d{2}$/.test(String(startDate))) {
+    return res.status(400).json({ error: 'Ongeldige datum.' });
+  }
+  try {
+    await pool.query(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('event', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()`,
+      [JSON.stringify({ startDate })]
+    );
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Datum opslaan mislukt.' });
+  }
+});
+
+// Admin: pauzepunt van een dag plaatsen of weghalen.
+app.put('/api/admin/pause/:day', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  const { pause } = req.body || {};
+  if (pause !== null && !isValidLatLng(pause)) {
+    return res.status(400).json({ error: 'Ongeldig pauzepunt.' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'UPDATE day_routes SET pause = $1, updated_at = now() WHERE day = $2',
+      [pause ? JSON.stringify(pause) : null, day]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Publiceer eerst de route van deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Pauzepunt opslaan mislukt.' });
+  }
+});
+
+// --- Sponsoracties: bezoekers melden vóór het evenement een actie aan ---
+
+// Publiek: alleen plek en actie (geen persoonsgegevens).
+app.get('/api/sponsors', async (req, res) => {
+  if (!requireDb(res)) return;
+  try {
+    const { rows } = await pool.query('SELECT id, day, lat, lng, action FROM sponsors ORDER BY id');
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
+  }
+});
+
+app.post('/api/sponsors', async (req, res) => {
+  if (!requireDb(res)) return;
+  try {
+    if (!(await isSponsorOpen())) {
+      return res.status(403).json({ error: 'De aanmelding voor sponsoracties is gesloten.' });
+    }
+    const { day, lat, lng, firstName, lastName, email, phone, action } = req.body || {};
+    const dayNum = Number(day);
+    const fields = [firstName, lastName, email, phone, action];
+    if (
+      !Number.isInteger(dayNum) || dayNum < 1 || dayNum > 4 ||
+      !isValidLatLng({ lat, lng }) ||
+      !fields.every((f) => typeof f === 'string' && f.trim().length > 0 && f.length <= 500) ||
+      !/^\S+@\S+\.\S+$/.test(email)
+    ) {
+      return res.status(400).json({ error: 'Vul alle velden in (met een geldig e-mailadres).' });
+    }
+    const { rows } = await pool.query(
+      `INSERT INTO sponsors (day, lat, lng, first_name, last_name, email, phone, action)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [dayNum, lat, lng, firstName.trim(), lastName.trim(), email.trim(), phone.trim(), action.trim()]
+    );
+    res.status(201).json({ id: rows[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Aanmelden mislukt.' });
+  }
+});
+
+// Admin: volledige gegevens inzien en aanmeldingen verwijderen.
+app.get('/api/admin/sponsors', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, day, lat, lng, first_name, last_name, email, phone, action, created_at
+       FROM sponsors ORDER BY day, id`
+    );
+    res.json(rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Sponsoracties ophalen mislukt.' });
+  }
+});
+
+app.delete('/api/admin/sponsors/:id', async (req, res) => {
+  if (!requireDb(res)) return;
+  if (!requireAdmin(req, res)) return;
+  try {
+    const { rowCount } = await pool.query('DELETE FROM sponsors WHERE id = $1', [Number(req.params.id)]);
+    if (rowCount === 0) return res.status(404).json({ error: 'Aanmelding niet gevonden.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Verwijderen mislukt.' });
+  }
 });
 
 // Admin: planningsinstellingen (tempo's, passeertijd, marge) opslaan.
@@ -214,7 +363,7 @@ app.get('/api/routes', async (req, res) => {
   if (!requireDb(res)) return;
   try {
     const { rows } = await pool.query(
-      'SELECT day, waypoints, path, distance_m, crossings, updated_at FROM day_routes ORDER BY day'
+      'SELECT day, waypoints, path, distance_m, crossings, pause, updated_at FROM day_routes ORDER BY day'
     );
     res.json(rows);
   } catch (err) {

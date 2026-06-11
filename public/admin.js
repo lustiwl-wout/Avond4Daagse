@@ -12,6 +12,10 @@ let vrSettings = { walkKmh: 4, passMin: 8, bikeKmh: 15, marginMin: 2 };
 let map;
 let currentDay = 1;
 let editMode = 'route'; // 'route' | 'rec' | 'vr'
+let pausePlacing = false;
+let eventStart = null;
+let sponsors = [];
+let sponsorLayers = [];
 let loggedIn = false;
 let password = sessionStorage.getItem('a4d-admin-password') || '';
 let startFinish = null;
@@ -76,6 +80,7 @@ async function init() {
   const config = await res.json();
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
+  eventStart = config.eventStart || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };
 
   map = createMap('map', startFinish || ALMERE_CENTER, startFinish ? 15 : 13);
@@ -87,6 +92,8 @@ async function init() {
       distanceM: 0,
       path: null,
       crossings: [],
+      pause: null,
+      pauseMarker: null,
       routeLine: L.polyline([], { color: DAY_COLORS[day], weight: 5, opacity: 0.8 }).addTo(map),
     };
   }
@@ -95,8 +102,12 @@ async function init() {
     if (!loggedIn) return;
     map.closePopup();
     const point = { lat: e.latlng.lat, lng: e.latlng.lng };
-    if (editMode === 'route') addPoint(currentDay, point);
-    else if (editMode === 'vr') addManualCrossing(point);
+    if (editMode === 'route') {
+      if (pausePlacing) placePause(currentDay, point);
+      else addPoint(currentDay, point);
+    } else if (editMode === 'vr') {
+      addManualCrossing(point);
+    }
   });
 
   if (password) tryLogin(password);
@@ -115,9 +126,10 @@ async function tryLogin(pwd) {
       document.getElementById('login-section').classList.add('hidden');
       document.getElementById('editor').classList.remove('hidden');
       await ensureStartFinish();
-      await Promise.all([loadSavedRoutes(), loadTeams(), loadTeamRoutes()]);
+      await Promise.all([loadSavedRoutes(), loadTeams(), loadTeamRoutes(), loadSponsors()]);
       renderTeams();
       initSettingsInputs();
+      initEventInput();
       updateDraftStatus();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -386,12 +398,194 @@ function loadDayPoints(day, waypoints) {
   updateRoute(day);
 }
 
+// --- Pauzepunt: ligt altijd op de route, versleepbaar ---
+const PAUSE_SNAP_M = 50;
+
+function updatePauseBtn() {
+  const d = days[currentDay];
+  document.getElementById('pause-btn').textContent = pausePlacing
+    ? 'Klik op de route… (of klik hier om te annuleren)'
+    : `Pauzepunt ${d.pause ? 'verplaatsen' : 'plaatsen'} (dag ${currentDay})`;
+}
+
+document.getElementById('pause-btn').addEventListener('click', () => {
+  if (!days[currentDay].path) {
+    setSaveStatus('Let op: teken eerst de route van deze dag.');
+    return;
+  }
+  pausePlacing = !pausePlacing;
+  updatePauseBtn();
+});
+
+async function placePause(day, clicked) {
+  pausePlacing = false;
+  const d = days[day];
+  const nearest = nearestOnPath(d.path, clicked);
+  if (nearest.dist > PAUSE_SNAP_M) {
+    setSaveStatus('Let op: het pauzepunt moet op de route liggen — klik op (of vlak naast) de route.');
+    updatePauseBtn();
+    return;
+  }
+  d.pause = { lat: nearest.lat, lng: nearest.lng };
+  await savePause(day);
+  drawPauseMarker(day);
+  updatePauseBtn();
+  setSaveStatus(`Pauzepunt dag ${day} geplaatst.`);
+}
+
+async function savePause(day) {
+  const res = await fetch(`/api/admin/pause/${day}`, {
+    method: 'PUT',
+    headers: adminHeaders(true),
+    body: JSON.stringify({ pause: days[day].pause }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    setSaveStatus('Let op: ' + (err.error || 'pauzepunt opslaan mislukt.'));
+  }
+}
+
+function drawPauseMarker(day) {
+  const d = days[day];
+  if (d.pauseMarker) {
+    d.pauseMarker.remove();
+    d.pauseMarker = null;
+  }
+  if (!d.pause) return;
+  d.pauseMarker = L.marker([d.pause.lat, d.pause.lng], {
+    icon: pauseIcon(),
+    draggable: true,
+    zIndexOffset: 800,
+    title: `Pauzepunt dag ${day}`,
+  }).addTo(map);
+  d.pauseMarker.on('dragend', async () => {
+    // Pauzepunt blijft altijd op de route: snap naar het dichtstbijzijnde punt.
+    const ll = d.pauseMarker.getLatLng();
+    const nearest = nearestOnPath(d.path || [d.pause], { lat: ll.lat, lng: ll.lng });
+    d.pause = { lat: nearest.lat, lng: nearest.lng };
+    d.pauseMarker.setLatLng([d.pause.lat, d.pause.lng]);
+    await savePause(day);
+  });
+  d.pauseMarker.on('click', () => {
+    const div = document.createElement('div');
+    div.className = 'point-menu';
+    const title = document.createElement('strong');
+    title.textContent = `Pauzepunt dag ${day}`;
+    div.appendChild(title);
+    div.appendChild(
+      menuButton('Bekijk in Street View', () => {
+        map.closePopup();
+        openStreetView(d.pause.lat, d.pause.lng);
+      })
+    );
+    div.appendChild(
+      menuButton('Verwijder pauzepunt', async () => {
+        map.closePopup();
+        d.pause = null;
+        await savePause(day);
+        drawPauseMarker(day);
+        updatePauseBtn();
+      })
+    );
+    openMapMenu(map, d.pauseMarker.getLatLng(), div);
+  });
+}
+
+// --- Sponsoracties: aanmeldingen inzien en evenementdatum instellen ---
+function initEventInput() {
+  const input = document.getElementById('set-event');
+  if (eventStart) input.value = eventStart;
+  input.addEventListener('change', async () => {
+    eventStart = input.value || null;
+    const res = await fetch('/api/admin/event-date', {
+      method: 'PUT',
+      headers: adminHeaders(true),
+      body: JSON.stringify({ startDate: eventStart }),
+    });
+    setVrStatus(
+      res.ok
+        ? eventStart
+          ? `Eerste loopdag ingesteld op ${eventStart}; tot die dag staat de sponsoraanmelding open.`
+          : 'Eerste loopdag gewist — de sponsoraanmelding staat nu uit.'
+        : 'Let op: datum opslaan mislukt.'
+    );
+  });
+}
+
+async function loadSponsors() {
+  try {
+    const res = await fetch('/api/admin/sponsors', { headers: adminHeaders() });
+    if (res.ok) sponsors = await res.json();
+  } catch {
+    sponsors = [];
+  }
+  renderSponsors();
+}
+
+function renderSponsors() {
+  sponsorLayers.forEach((l) => l.remove());
+  sponsorLayers = [];
+  const list = document.getElementById('sponsor-list');
+  list.innerHTML = '';
+  if (sponsors.length === 0) {
+    list.innerHTML = '<li class="hint">Nog geen aanmeldingen.</li>';
+    return;
+  }
+  for (const s of sponsors) {
+    const marker = L.marker([s.lat, s.lng], {
+      icon: starIcon(),
+      zIndexOffset: 700,
+      title: `Sponsoractie dag ${s.day}: ${s.action}`,
+    }).addTo(map);
+    marker.bindPopup(
+      `<div class="point-menu"><strong>Sponsoractie (dag ${s.day})</strong>` +
+        `<span>${escapeHtml(s.action)}</span>` +
+        `<span>${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)}<br>${escapeHtml(s.email)} · ${escapeHtml(s.phone)}</span></div>`
+    );
+    sponsorLayers.push(marker);
+
+    const li = document.createElement('li');
+    const label = document.createElement('span');
+    label.innerHTML = `<strong>Dag ${s.day}:</strong> ${escapeHtml(s.action)}<br>
+      <span class="route-meta">${escapeHtml(s.first_name)} ${escapeHtml(s.last_name)} · ${escapeHtml(s.email)} · ${escapeHtml(s.phone)}</span>`;
+    li.appendChild(label);
+    const controls = document.createElement('span');
+    const showBtn = document.createElement('button');
+    showBtn.textContent = 'Toon';
+    showBtn.addEventListener('click', () => {
+      map.setView([s.lat, s.lng], 17);
+      marker.openPopup();
+    });
+    controls.appendChild(showBtn);
+    const delBtn = document.createElement('button');
+    delBtn.textContent = '✕';
+    delBtn.title = 'Aanmelding verwijderen';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm('Deze sponsoraanmelding verwijderen?')) return;
+      await fetch(`/api/admin/sponsors/${s.id}`, { method: 'DELETE', headers: adminHeaders() });
+      sponsors = sponsors.filter((x) => x.id !== s.id);
+      renderSponsors();
+    });
+    controls.appendChild(delBtn);
+    li.appendChild(controls);
+    list.appendChild(li);
+  }
+}
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = String(s);
+  return div.innerHTML;
+}
+
 // --- UI: dagen en modus ---
 function updateDayLabels() {
   document.getElementById('save-btn').textContent = `Maak route dag ${currentDay} definitief`;
   document.getElementById('delete-btn').textContent = `Verwijder route dag ${currentDay}`;
   document.getElementById('print-btn').textContent = `Printversie dag ${currentDay}`;
   document.getElementById('rec-save').textContent = `Definitief dag ${currentDay}`;
+  pausePlacing = false;
+  updatePauseBtn();
   updateDraftStatus();
 }
 
@@ -531,6 +725,8 @@ async function loadSavedRoutes() {
     const rows = await res.json();
     for (const row of rows) {
       days[row.day].crossings = row.crossings || [];
+      days[row.day].pause = row.pause || null;
+      drawPauseMarker(row.day);
       loadDayPoints(row.day, row.waypoints);
     }
     const draftsRes = await fetch('/api/admin/drafts', { headers: adminHeaders() });

@@ -78,6 +78,15 @@
           </section>
 
           <section>
+            <h2>Pauzepunt</h2>
+            <p class="hint">
+              Markeer waar de stoet pauze houdt (drinken/fruit). Klik op de knop
+              en daarna op de route; het punt is daarna versleepbaar.
+            </p>
+            <button id="pause-btn">Pauzepunt plaatsen (dag 1)</button>
+          </section>
+
+          <section>
             <h2>Definitief maken</h2>
             <p class="hint">
               Elke wijziging wordt automatisch als concept bewaard — bezoekers
@@ -153,7 +162,7 @@
             <p class="hint">
               De planning verloopt automatisch: na elke routewijziging worden de
               punten over de teams verdeeld en de fietsroutes (stippellijnen)
-              berekend en getoetst met echte fietstijden van Google. Eén team
+              berekend en getoetst met echte fietstijden. Eén team
               bemant één punt tegelijk: het vertrekt pas als de héle stoet
               voorbij is en moet zijn volgende punt bereiken vóórdat de kop van
               de stoet daar aankomt. Handmatig bijsturen kan altijd: wijs via
@@ -169,8 +178,19 @@
 
         <section>
           <h2>Street View</h2>
-          <p class="hint">Sleep het gele poppetje (rechtsonder op de kaart) op de route om de straat te bekijken.</p>
+          <p class="hint">Klik op een punt op de kaart (vlag, tussenpunt, ruitje of pauzepunt) en kies "Bekijk in Street View".</p>
         </section>
+
+        <details id="sponsor-admin">
+          <summary>Sponsoracties &amp; evenement</summary>
+          <label class="setting-row">Eerste loopdag <span><input type="date" id="set-event" /></span></label>
+          <p class="hint">
+            Tot die datum kunnen bezoekers op de kaart een plek kiezen voor een
+            sponsoractie en hun gegevens achterlaten; vanaf de eerste loopdag
+            verdwijnt die optie automatisch van de bezoekerspagina.
+          </p>
+          <ul id="sponsor-list"><li class="hint">Nog geen aanmeldingen.</li></ul>
+        </details>
 
         <p id="save-status" class="hint"></p>
       </div>

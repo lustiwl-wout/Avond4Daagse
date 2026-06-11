@@ -17,8 +17,16 @@ Webapp voor de Avondvierdaagse van basisschool Syncope (Almere). Bezoekers zien 
 - **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt. Bij de eerste keer inloggen zoekt de app dit punt automatisch op (instelbaar via de omgevingsvariabele `START_ADDRESS`); daarna kun je de 🏁-vlag nog precies goed slepen. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
-- **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "⏪ Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
+- **Automatisch bewaard als concept**: elke wijziging (punt erbij, verslepen, verwijderen, wissen) wordt direct als conceptversie bewaard — er is geen opslaanknop nodig en je kunt met "Herstel vorige versie" stap voor stap terug. Bezoekers zien concepten niet.
 - **"Maak route dag X definitief"** publiceert de route voor bezoekers en ruimt alle tussenversies op; er is precies één definitieve route per dag.
+- **Pauzepunt**: markeer per dag waar de stoet pauze houdt (knop "Pauzepunt plaatsen", daarna klikken op de route; versleepbaar en blijft altijd op de route). Zichtbaar voor bezoekers, verkeersregelaars en op de printversie.
+
+## Sponsoracties (promotie vóór het evenement)
+
+- Stel in de admin (Sponsoracties & evenement) de **eerste loopdag** in. Tot die datum staat op de bezoekerspagina de oproep *"Wij zoeken nog sponsoren — heb jij een leuke actie om onze avondvierdaagse geweldig te maken?"*.
+- Bezoekers kiezen een plek op de route en laten voornaam, achternaam, e-mail, telefoon en hun actie achter. De plek verschijnt als ster op de kaart (publiek alleen de actie, geen persoonsgegevens).
+- Vanaf de eerste loopdag verdwijnt de aanmeldoptie automatisch; de sterren blijven zichtbaar.
+- De admin ziet alle aanmeldingen met contactgegevens en kan ze verwijderen.
 - **Vastlegmodus (🎯)**: leg de route vast terwijl je hem zelf loopt — start de GPS op je telefoon en tik bij elke afslag op "Leg punt vast op mijn locatie". De route wordt direct wandelend doorgerekend en punten blijven aanklikbaar en versleepbaar.
 
 ## Verkeersregelaars
@@ -45,19 +53,23 @@ export $(grep -v '^#' .env | xargs)
 npm start              # http://localhost:3000
 ```
 
-## Stap 1 — Google Maps API-key
+## Kaarten en routes: OpenStreetMap — Google alleen voor Street View
+
+- **Kaartweergave**: Leaflet met OpenStreetMap-tegels (gratis, geen key).
+- **Routes**: OSRM via de routers van openstreetmap.org — voetprofiel voor de wandelroute, fietsprofiel voor de teamroutes. Zelfde wegendata als de kruisingdetectie, dus alles sluit exact op elkaar aan.
+- **Adressen en straatnamen**: Nominatim (server-side, met cache en nette throttling).
+- **Street View**: het enige Google-onderdeel. Overlay-panorama op de kaartpagina's en foto's vanuit vier windrichtingen op de printversie.
+
+## Stap 1 — Google-key (alleen voor Street View)
 
 1. Ga naar [console.cloud.google.com](https://console.cloud.google.com) en maak een project aan.
-2. Schakel onder **APIs & Services → Library** deze vijf API's in:
-   - **Maps JavaScript API** (kaart + Street View)
-   - **Directions API** (wandel- en fietsroutes over straten)
-   - **Geocoding API** (adressen en straatnamen)
-   - **Maps Static API** (kaartafbeeldingen op de printversie)
+2. Schakel onder **APIs & Services → Library** deze twee API's in:
+   - **Maps JavaScript API** (het Street View-panorama)
    - **Street View Static API** (Street View-foto's op de printversie)
-3. Maak onder **Credentials** een API-key aan en beperk hem: *Application restrictions* → Websites → `https://jouw-app.onrender.com/*`; *API restrictions* → de vijf bovenstaande API's.
+3. Maak onder **Credentials** een API-key aan en beperk hem: *Application restrictions* → Websites → `https://jouw-app.onrender.com/*`; *API restrictions* → de twee bovenstaande API's.
 4. Google vraagt een betaalrekening, maar geeft een ruim gratis maandelijks tegoed; voor dit gebruik blijf je daar ruim binnen.
 
-> De kruisingdetectie gebruikt OpenStreetMap (gratis, geen key); een aparte serverkey is niet meer nodig — een eventueel eerder ingestelde `GOOGLE_MAPS_SERVER_KEY` kan weg.
+> Eerder ingestelde extra API's (Directions, Geocoding, Maps Static, Roads) en een eventuele `GOOGLE_MAPS_SERVER_KEY` zijn niet meer nodig en kunnen uit.
 
 ## Stap 2 — Neon database
 

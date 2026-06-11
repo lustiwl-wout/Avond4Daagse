@@ -53,6 +53,7 @@ async function loadData() {
           }),
           bounds: boundsOf(path),
           crossings: (row.crossings || []).filter((c) => !c.hidden),
+          pause: row.pause || null,
         };
       }
     }
@@ -113,6 +114,15 @@ function refreshView() {
   map.fitBounds(route.bounds.pad(0.07));
   if (route.crossings.length === 0) {
     warningEl.textContent = 'Er zijn nog geen oversteekpunten gepubliceerd voor deze dag.';
+  }
+  if (route.pause) {
+    vrLayers.push(
+      L.marker([route.pause.lat, route.pause.lng], {
+        icon: pauseIcon(),
+        zIndexOffset: 800,
+        title: `Pauzepunt dag ${selectedDay}`,
+      }).addTo(map)
+    );
   }
 
   const teamFilter = selectedTeam === 'all' ? null : Number(selectedTeam);
