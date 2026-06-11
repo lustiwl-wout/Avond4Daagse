@@ -4,16 +4,32 @@ const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 
 function createMap(elementId, center, zoom) {
   const map = L.map(elementId).setView([center.lat, center.lng], zoom);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
     attribution:
       'Kaartgegevens &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers',
   }).addTo(map);
+  // Reserve: laden de OSM-tegels een paar keer niet (sommige netwerken of
+  // browsers blokkeren ze), wissel dan naar de CARTO-tegelserver.
+  let tileErrors = 0;
+  tiles.on('tileerror', () => {
+    tileErrors++;
+    if (tileErrors >= 3 && !map._fallbackTiles) {
+      map._fallbackTiles = true;
+      tiles.remove();
+      L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png', {
+        maxZoom: 19,
+        attribution:
+          'Kaartgegevens &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-bijdragers &copy; CARTO',
+      }).addTo(map);
+    }
+  });
   // Leaflet meet zijn formaat alleen bij het laden; meet opnieuw zodra de
   // kaartruimte verandert (bv. zijbalk die groeit na inloggen op mobiel).
   if (window.ResizeObserver) {
     new ResizeObserver(() => map.invalidateSize()).observe(document.getElementById(elementId));
   }
+  setTimeout(() => map.invalidateSize(), 300);
   return map;
 }
 

@@ -3,6 +3,10 @@
    schoolhuisstijl (syncope.asg.nl) aan te laten sluiten.
    ========================================================= */
 :root {
+  /* De site beheert zijn eigen kleuren; voorkom dat browsers (Samsung
+     Internet/Chrome "donkere modus op websites") alles inverteren — dat
+     maakte o.a. de kaarttegels onzichtbaar. */
+  color-scheme: only light;
   /* Kleuren naar de huisstijl van o.b.s. Syncope (syncope.asg.nl):
      teal-groene tinten, donkergrijze tekst en zachte, ronde vormen. */
   --brand: #2ba59a;        /* hoofdkleur (primaire knoppen, accenten) */
