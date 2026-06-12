@@ -121,8 +121,7 @@ async function loadEvents() {
 
 // Avondvierdaagse archiveren — met het master-wachtwoord. Het jaartal
 // komt achter de naam en het webadres en op het oude webadres start een
-// verse editie (zelfde naam en beheerwachtwoord). Gebeurt ook vanzelf
-// zodra de laatste loopdag voorbij is.
+// verse editie (zelfde naam en beheerwachtwoord).
 async function archiveEvent(ev) {
   const status = document.getElementById('list-status');
   const master = document.getElementById('master-password').value;

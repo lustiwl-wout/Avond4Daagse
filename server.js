@@ -375,13 +375,15 @@ function computeDefaultDay(eventSetting) {
   return upcoming ? upcoming.day : entries[entries.length - 1].day;
 }
 
-// --- Automatisch archief ---
-// Is de laatste loopdag van een avondvierdaagse voorbij, dan krijgt die
-// het jaartal achter de naam en het webadres (syncope → syncope2026) en
-// komt er op het oude webadres een verse editie voor het volgende jaar:
-// zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen
-// gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg.
-// Het archief blijft gewoon te bekijken en te beheren op het nieuwe adres.
+// --- Archief ---
+// De platformbeheerder archiveert een afgelopen avondvierdaagse zelf, met
+// de archiveerknop in het platformbeheer. Die zet het jaartal achter de
+// naam en het webadres (syncope → syncope2026) en zet op het oude
+// webadres een verse editie klaar voor het volgende jaar: zelfde naam en
+// beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes,
+// oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief
+// verandert verder niets: het blijft gewoon te bekijken en te beheren op
+// het nieuwe adres.
 
 // Eerste vrije archief-webadres: slug2026, anders slug2026-2, … — binnen
 // de 40 tekens die SLUG_RE toestaat.
@@ -438,35 +440,6 @@ async function archiveEvent(eventId, year) {
     throw err;
   } finally {
     client.release();
-  }
-}
-
-// Controle bij het opstarten en daarna elk uur: archiveer elk event
-// waarvan de laatste ingevulde loopdag vóór vandaag ligt.
-async function archivePastEvents() {
-  if (!pool) return;
-  const today = todayNl();
-  let rows;
-  try {
-    ({ rows } = await pool.query(
-      `SELECT e.id, e.slug, s.value AS event_setting
-       FROM events e
-       JOIN settings s ON s.event_id = e.id AND s.key = 'event'
-       WHERE e.archived_at IS NULL`
-    ));
-  } catch (err) {
-    console.error('Archiefcontrole mislukt:', err);
-    return;
-  }
-  for (const ev of rows) {
-    const entries = scheduleEntries(ev.event_setting);
-    const lastDate = entries.length > 0 ? entries[entries.length - 1].date : null;
-    if (!lastDate || lastDate >= today) continue;
-    try {
-      await archiveEvent(ev.id, lastDate.slice(0, 4));
-    } catch (err) {
-      console.error(`Archiveren van "${ev.slug}" mislukt:`, err);
-    }
   }
 }
 
@@ -779,8 +752,8 @@ app.post('/api/events', async (req, res) => {
   }
 });
 
-// Direct archiveren door de platformbeheerder — voor wie niet op het
-// automatische archief wil wachten of geen loopdagen heeft ingevuld.
+// Archiveren — alleen de platformbeheerder, via de knop in het
+// platformbeheer. Er gebeurt nooit iets vanzelf.
 app.post('/api/events/:slug/archive', async (req, res) => {
   if (!requireDb(res)) return;
   const blocked = authBlockedMinutes(req.ip);
@@ -1628,11 +1601,6 @@ dbInit = initDb()
   .then(() => {
     dbReady = true;
     console.log('Database klaar.');
-    // Automatisch archief: direct controleren (een slapende instantie
-    // wordt wakker bij de eerste bezoeker) en daarna elk uur — een
-    // avondvierdaagse raakt 's nachts "voorbij".
-    archivePastEvents();
-    setInterval(archivePastEvents, 60 * 60 * 1000).unref();
   })
   .catch((err) => console.error('Database-initialisatie mislukt:', err));
 
