@@ -34,6 +34,13 @@ let loadingRoutes = false;
 const draftTimers = {};
 const draftCounts = { 1: 0, 2: 0, 3: 0, 4: 0 };
 
+// Fouttekst uit een API-antwoord, mét HTTP-status als er geen nette
+// JSON-fout in zit (bv. een proxyfout tijdens een deploy).
+async function apiError(res, fallback) {
+  const err = await res.json().catch(() => ({}));
+  return err.error || `${fallback} (fout ${res.status})`;
+}
+
 function adminHeaders(json = false) {
   const h = { 'x-admin-password': password };
   if (json) h['Content-Type'] = 'application/json';
@@ -69,9 +76,14 @@ async function saveDraft(day) {
     if (res.ok) {
       draftCounts[day] = (await res.json()).count;
       updateDraftStatus();
+      return true;
     }
+    saveDraft.lastError = (await res.json().catch(() => ({}))).error || `serverfout (${res.status})`;
+    return false;
   } catch {
     // volgende wijziging probeert het gewoon opnieuw
+    saveDraft.lastError = 'server niet bereikbaar';
+    return false;
   }
 }
 
@@ -119,9 +131,11 @@ document.getElementById('unlock-btn').addEventListener('click', async () => {
   if (!dayLocked()) return;
   // Eerste concept = kopie van de definitieve versie; daarmee is de dag
   // weer bewerkbaar. Bezoekers blijven de definitieve route zien.
-  await saveDraft(currentDay);
+  const ok = await saveDraft(currentDay);
   setSaveStatus(
-    `Dag ${currentDay} staat weer in concept. Maak de dag opnieuw definitief als je klaar bent met bewerken.`
+    ok
+      ? `Dag ${currentDay} staat weer in concept. Maak de dag opnieuw definitief als je klaar bent met bewerken.`
+      : `Let op: terugzetten naar concept mislukt (${saveDraft.lastError}) — probeer het zo opnieuw.`
   );
 });
 
@@ -1120,8 +1134,7 @@ async function crossingRequest(day, method, suffix, body = null) {
     return null;
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    setVrStatus('Let op: ' + (err.error || 'oversteekpunt opslaan mislukt.'));
+    setVrStatus('Let op: ' + (await apiError(res, 'oversteekpunt opslaan mislukt')));
     return null;
   }
   const data = await res.json().catch(() => null);
@@ -1193,8 +1206,7 @@ document.getElementById('vr-publish').addEventListener('click', async () => {
     updateVrPlanStatus();
     setVrStatus(`Verkeersplan dag ${currentDay} is definitief — zichtbaar op de verkeerspagina.`);
   } else {
-    const err = await res.json().catch(() => ({}));
-    setVrStatus('Let op: ' + (err.error || 'publiceren mislukt.'));
+    setVrStatus('Let op: ' + (await apiError(res, 'publiceren mislukt')));
   }
 });
 
@@ -1209,8 +1221,7 @@ document.getElementById('vr-unpublish').addEventListener('click', async () => {
     updateVrPlanStatus();
     setVrStatus(`Verkeersplan dag ${currentDay} is verborgen — de punten staan nog als concept in de admin.`);
   } else {
-    const err = await res.json().catch(() => ({}));
-    setVrStatus('Let op: ' + (err.error || 'verbergen mislukt.'));
+    setVrStatus('Let op: ' + (await apiError(res, 'verbergen mislukt')));
   }
 });
 
