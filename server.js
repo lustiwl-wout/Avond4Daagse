@@ -202,6 +202,22 @@ async function initDb() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+  // Verkeersplan kent concept en definitief: 'crossings' is het concept
+  // (admin), 'crossings_published' staat op /verkeer en de printversie.
+  // Bij het toevoegen van de kolom worden bestaande punten eenmalig als
+  // gepubliceerd gemarkeerd, zodat lopende planningen zichtbaar blijven.
+  const { rows: cpCol } = await pool.query(
+    `SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'day_routes' AND column_name = 'crossings_published'`
+  );
+  await pool.query('ALTER TABLE day_routes ADD COLUMN IF NOT EXISTS crossings_published JSONB');
+  if (cpCol.length === 0) {
+    await pool.query(
+      'UPDATE day_routes SET crossings_published = crossings WHERE crossings IS NOT NULL'
+    );
+    console.log('Bestaande oversteekpunten eenmalig als gepubliceerd gemarkeerd.');
+  }
+
   await migrateToEvents();
   // Pas ná de migratie: oudere installaties hebben de event_id-kolom dan pas.
   await pool.query(
@@ -916,11 +932,24 @@ eventApi.post('/admin/route', async (req, res) => {
 eventApi.get('/routes', async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT day, waypoints, path, distance_m, crossings, pause, updated_at
+      `SELECT day, waypoints, path, distance_m, crossings, crossings_published, pause, updated_at
        FROM day_routes WHERE event_id = $1 ORDER BY day`,
       [req.event.id]
     );
-    res.json(rows);
+    // 'crossings' = het definitieve verkeersplan (/verkeer, print);
+    // 'crossingsConcept' = de werkversie van de admin.
+    res.json(
+      rows.map((r) => ({
+        day: r.day,
+        waypoints: r.waypoints,
+        path: r.path,
+        distance_m: r.distance_m,
+        crossings: r.crossings_published || [],
+        crossingsConcept: r.crossings || [],
+        pause: r.pause,
+        updated_at: r.updated_at,
+      }))
+    );
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Routes ophalen mislukt.' });
@@ -1091,8 +1120,8 @@ eventApi.post('/admin/move-route', async (req, res) => {
     ]);
     for (const r of routeRows) {
       await client.query(
-        `INSERT INTO day_routes (event_id, day, waypoints, path, distance_m, crossings, pause, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, now())`,
+        `INSERT INTO day_routes (event_id, day, waypoints, path, distance_m, crossings, crossings_published, pause, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())`,
         [
           req.event.id,
           r.day === from ? to : from,
@@ -1100,6 +1129,7 @@ eventApi.post('/admin/move-route', async (req, res) => {
           r.path ? JSON.stringify(r.path) : null,
           r.distance_m,
           r.crossings ? JSON.stringify(r.crossings) : null,
+          r.crossings_published ? JSON.stringify(r.crossings_published) : null,
           r.pause ? JSON.stringify(r.pause) : null,
         ]
       );
@@ -1185,6 +1215,44 @@ eventApi.post('/admin/crossings/:day', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Oversteekpunt opslaan mislukt.' });
+  }
+});
+
+// Verkeersplan van een dag definitief maken (concept → /verkeer en print),
+// of juist verbergen.
+eventApi.put('/admin/crossings/:day/publish', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE day_routes SET crossings_published = COALESCE(crossings, '[]'::jsonb), updated_at = now()
+       WHERE event_id = $1 AND day = $2`,
+      [req.event.id, day]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Verkeersplan publiceren mislukt.' });
+  }
+});
+
+eventApi.put('/admin/crossings/:day/unpublish', async (req, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const day = parseDay(req, res);
+  if (day === null) return;
+  try {
+    const { rowCount } = await pool.query(
+      `UPDATE day_routes SET crossings_published = '[]'::jsonb, updated_at = now()
+       WHERE event_id = $1 AND day = $2`,
+      [req.event.id, day]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Geen route voor deze dag.' });
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Verkeersplan verbergen mislukt.' });
   }
 });
 

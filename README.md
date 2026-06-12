@@ -33,6 +33,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **Oversteekpunten zet de verkeersleider zelf op de kaart**: klik in de verkeersmodus op de route waar verkeersregelaars moeten staan. Het punt snapt naar de route en krijgt automatisch de straatnaam (Nominatim). De punten verschijnen als genummerde ruitjes, in routevolgorde.
 - Klik op een ruitje om een **team toe te wijzen**, **Street View** te openen of het punt te **verwijderen**.
 - **Teams** aanmaken met eigen kleur — verkeersregelaars fietsen altijd.
+- **Het verkeersplan kent concept en definitief**: oversteekpunten en teamtoewijzingen bewerk je als concept; pas na **"Maak verkeersplan dag X definitief"** zien verkeersregelaars ze op `/verkeer` en de printversie. Met "Verberg verkeersplan" haal je een gepubliceerd plan weer offline (het concept blijft staan).
 - **De verkeersleider wijst teams zelf toe**: klik op een ruitje en kies het team (of twee teams) voor dat punt. De tijden per post — wanneer de stoet aankomt (positie langs de route ÷ wandeltempo) en wanneer de hele stoet voorbij is (+ passeertijd) — staan op `/verkeer` en de printversie, als kloktijd zodra de starttijd van de dag is ingevuld.
 - **Navigeren** naar een post doen de verkeersregelaars via de Google Maps-knop per post op `/verkeer`; onderweg letten ze zelf op de stoet.
 

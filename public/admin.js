@@ -147,6 +147,7 @@ async function init() {
       distanceM: 0,
       path: null,
       crossings: [],
+      crossingsPublished: [],
       pause: null,
       pauseMarker: null,
       published: false,
@@ -897,7 +898,10 @@ async function loadSavedRoutes() {
     if (!res.ok) throw new Error();
     const rows = await res.json();
     for (const row of rows) {
-      days[row.day].crossings = row.crossings || [];
+      // Admin werkt aan het concept-verkeersplan; 'crossings' in het
+      // antwoord is de definitieve versie (zoals /verkeer hem toont).
+      days[row.day].crossings = row.crossingsConcept || [];
+      days[row.day].crossingsPublished = row.crossings || [];
       days[row.day].pause = row.pause || null;
       days[row.day].published = (row.waypoints || []).length > 0;
       drawPauseMarker(row.day);
@@ -1155,7 +1159,63 @@ function openStackedMenu(item) {
   openMapMenu(map, [item.lat, item.lng], div);
 }
 
+// Status van het verkeersplan: lopen concept en definitieve versie uiteen?
+function updateVrPlanStatus() {
+  const d = days[currentDay];
+  if (!d) return;
+  const statusEl = document.getElementById('vr-plan-status');
+  const publishBtn = document.getElementById('vr-publish');
+  const unpublishBtn = document.getElementById('vr-unpublish');
+  publishBtn.textContent = `Maak verkeersplan dag ${currentDay} definitief`;
+  const concept = JSON.stringify(d.crossings || []);
+  const published = JSON.stringify(d.crossingsPublished || []);
+  const inSync = concept === published;
+  if (inSync) {
+    statusEl.textContent =
+      (d.crossingsPublished || []).length > 0
+        ? 'Definitief — dit verkeersplan staat op de verkeerspagina en de printversie.'
+        : 'Nog geen definitief verkeersplan voor deze dag.';
+  } else {
+    statusEl.textContent =
+      'Concept — er zijn wijzigingen die nog niet op de verkeerspagina staan. Maak het verkeersplan definitief om ze te publiceren.';
+  }
+  publishBtn.classList.toggle('hidden', inSync);
+  unpublishBtn.classList.toggle('hidden', (d.crossingsPublished || []).length === 0);
+}
+
+document.getElementById('vr-publish').addEventListener('click', async () => {
+  const res = await fetch(api(`/admin/crossings/${currentDay}/publish`), {
+    method: 'PUT',
+    headers: adminHeaders(),
+  });
+  if (res.ok) {
+    days[currentDay].crossingsPublished = JSON.parse(JSON.stringify(days[currentDay].crossings));
+    updateVrPlanStatus();
+    setVrStatus(`Verkeersplan dag ${currentDay} is definitief — zichtbaar op de verkeerspagina.`);
+  } else {
+    const err = await res.json().catch(() => ({}));
+    setVrStatus('Let op: ' + (err.error || 'publiceren mislukt.'));
+  }
+});
+
+document.getElementById('vr-unpublish').addEventListener('click', async () => {
+  if (!confirm(`Verkeersplan van dag ${currentDay} verbergen op de verkeerspagina?`)) return;
+  const res = await fetch(api(`/admin/crossings/${currentDay}/unpublish`), {
+    method: 'PUT',
+    headers: adminHeaders(),
+  });
+  if (res.ok) {
+    days[currentDay].crossingsPublished = [];
+    updateVrPlanStatus();
+    setVrStatus(`Verkeersplan dag ${currentDay} is verborgen — de punten staan nog als concept in de admin.`);
+  } else {
+    const err = await res.json().catch(() => ({}));
+    setVrStatus('Let op: ' + (err.error || 'verbergen mislukt.'));
+  }
+});
+
 function refreshVrLayer() {
+  updateVrPlanStatus();
   vrLayers.forEach((l) => l.remove());
   vrLayers = [];
   vrClickItems = [];
