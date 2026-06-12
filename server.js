@@ -1265,11 +1265,14 @@ eventApi.post('/admin/teams', async (req, res) => {
   const { name } = req.body;
   if (!name || typeof name !== 'string') return res.status(400).json({ error: 'Teamnaam is verplicht.' });
   try {
-    const { rows: countRows } = await pool.query(
-      'SELECT COUNT(*)::int AS n FROM teams WHERE event_id = $1',
-      [req.event.id]
-    );
-    const color = TEAM_COLORS[countRows[0].n % TEAM_COLORS.length];
+    // Eerste kleur die nog niet in gebruik is — tellen alleen gaat mis
+    // zodra er ooit een team verwijderd is (twee teams met dezelfde kleur).
+    const { rows: existing } = await pool.query('SELECT color FROM teams WHERE event_id = $1', [
+      req.event.id,
+    ]);
+    const used = new Set(existing.map((r) => r.color));
+    const color =
+      TEAM_COLORS.find((c) => !used.has(c)) || TEAM_COLORS[existing.length % TEAM_COLORS.length];
     const { rows } = await pool.query(
       'INSERT INTO teams (event_id, name, color) VALUES ($1, $2, $3) RETURNING id, name, color',
       [req.event.id, name.trim(), color]
