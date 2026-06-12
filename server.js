@@ -158,9 +158,12 @@ async function initDb() {
       slug TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       password_hash TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      archived_at TIMESTAMPTZ
     )
   `);
+  // Bestaande installaties: kolom voor het automatische archief erbij.
+  await pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS day_routes (
       event_id INTEGER NOT NULL,
@@ -370,6 +373,101 @@ function computeDefaultDay(eventSetting) {
   const today = todayNl();
   const upcoming = entries.find((e) => e.date >= today);
   return upcoming ? upcoming.day : entries[entries.length - 1].day;
+}
+
+// --- Automatisch archief ---
+// Is de laatste loopdag van een avondvierdaagse voorbij, dan krijgt die
+// het jaartal achter de naam en het webadres (syncope → syncope2026) en
+// komt er op het oude webadres een verse editie voor het volgende jaar:
+// zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen
+// gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg.
+// Het archief blijft gewoon te bekijken en te beheren op het nieuwe adres.
+
+// Eerste vrije archief-webadres: slug2026, anders slug2026-2, … — binnen
+// de 40 tekens die SLUG_RE toestaat.
+async function freeArchiveSlug(client, baseSlug, year) {
+  for (let i = 1; i <= 9; i++) {
+    const suffix = i === 1 ? year : `${year}-${i}`;
+    const slug = baseSlug.slice(0, 40 - suffix.length) + suffix;
+    const { rows } = await client.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
+    if (rows.length === 0) return slug;
+  }
+  throw new Error(`geen vrij archief-webadres voor "${baseSlug}${year}"`);
+}
+
+// Archiveert één event en zet de verse editie klaar. Geeft het
+// archief-webadres terug, of null als het event al gearchiveerd was.
+async function archiveEvent(eventId, year) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Rijslot + hercontrole: twee serverinstanties (bv. tijdens een
+    // deploy) mogen hetzelfde event niet allebei archiveren.
+    const { rows } = await client.query(
+      'SELECT slug, name, password_hash FROM events WHERE id = $1 AND archived_at IS NULL FOR UPDATE',
+      [eventId]
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const { slug, name, password_hash } = rows[0];
+    const archiveSlug = await freeArchiveSlug(client, slug, year);
+    const archiveName = name.endsWith(year) ? name : `${name} ${year}`;
+    await client.query('UPDATE events SET slug = $1, name = $2, archived_at = now() WHERE id = $3', [
+      archiveSlug,
+      archiveName,
+      eventId,
+    ]);
+    const { rows: fresh } = await client.query(
+      'INSERT INTO events (slug, name, password_hash) VALUES ($1, $2, $3) RETURNING id',
+      [slug, name, password_hash]
+    );
+    await client.query(
+      `INSERT INTO settings (event_id, key, value)
+       SELECT $1, key, value FROM settings WHERE event_id = $2 AND key IN ('start_finish', 'vr_settings')`,
+      [fresh[0].id, eventId]
+    );
+    await client.query('COMMIT');
+    console.log(
+      `Avondvierdaagse "${slug}" gearchiveerd als "${archiveSlug}"; nieuwe editie klaargezet op "${slug}".`
+    );
+    return archiveSlug;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Controle bij het opstarten en daarna elk uur: archiveer elk event
+// waarvan de laatste ingevulde loopdag vóór vandaag ligt.
+async function archivePastEvents() {
+  if (!pool) return;
+  const today = todayNl();
+  let rows;
+  try {
+    ({ rows } = await pool.query(
+      `SELECT e.id, e.slug, s.value AS event_setting
+       FROM events e
+       JOIN settings s ON s.event_id = e.id AND s.key = 'event'
+       WHERE e.archived_at IS NULL`
+    ));
+  } catch (err) {
+    console.error('Archiefcontrole mislukt:', err);
+    return;
+  }
+  for (const ev of rows) {
+    const entries = scheduleEntries(ev.event_setting);
+    const lastDate = entries.length > 0 ? entries[entries.length - 1].date : null;
+    if (!lastDate || lastDate >= today) continue;
+    try {
+      await archiveEvent(ev.id, lastDate.slice(0, 4));
+    } catch (err) {
+      console.error(`Archiveren van "${ev.slug}" mislukt:`, err);
+    }
+  }
 }
 
 // --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
@@ -626,7 +724,11 @@ app.get('/api/version', (req, res) => {
 app.get('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   try {
-    const { rows } = await pool.query('SELECT slug, name FROM events ORDER BY name');
+    // Lopende edities eerst, archieven (afgelopen edities) daarachter.
+    const { rows } = await pool.query(
+      `SELECT slug, name, archived_at IS NOT NULL AS archived
+       FROM events ORDER BY archived_at IS NOT NULL, name`
+    );
     // baseDomain erbij: de frontend bouwt dan subdomein-links
     // (syncope.a4droute.nl) in plaats van pad-links (/syncope).
     res.json({ baseDomain: BASE_DOMAIN || null, events: rows });
@@ -674,6 +776,40 @@ app.post('/api/events', async (req, res) => {
     }
     console.error(err);
     res.status(500).json({ error: 'Aanmaken mislukt.' });
+  }
+});
+
+// Direct archiveren door de platformbeheerder — voor wie niet op het
+// automatische archief wil wachten of geen loopdagen heeft ingevuld.
+app.post('/api/events/:slug/archive', async (req, res) => {
+  if (!requireDb(res)) return;
+  const blocked = authBlockedMinutes(req.ip);
+  if (blocked) return rejectTooManyAttempts(res, blocked);
+  if (!checkMaster(req.get('x-admin-password'))) {
+    recordAuthFailure(req.ip);
+    return res.status(401).json({ error: 'Alleen de platformbeheerder kan archiveren.' });
+  }
+  authFailures.delete(req.ip);
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.id, e.archived_at, s.value AS event_setting
+       FROM events e
+       LEFT JOIN settings s ON s.event_id = e.id AND s.key = 'event'
+       WHERE e.slug = $1`,
+      [String(req.params.slug).toLowerCase()]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Onbekende avondvierdaagse.' });
+    if (rows[0].archived_at) return res.status(409).json({ error: 'Dit is al een archief.' });
+    // Jaartal: van de laatste ingevulde loopdag, anders het huidige jaar.
+    const entries = scheduleEntries(rows[0].event_setting);
+    const year =
+      entries.length > 0 ? entries[entries.length - 1].date.slice(0, 4) : todayNl().slice(0, 4);
+    const archiveSlug = await archiveEvent(rows[0].id, year);
+    if (!archiveSlug) return res.status(409).json({ error: 'Dit is al een archief.' });
+    res.json({ archiveSlug });
+  } catch (err) {
+    console.error('Archiveren mislukt:', err);
+    res.status(500).json({ error: 'Archiveren mislukt.' });
   }
 });
 
@@ -1492,6 +1628,11 @@ dbInit = initDb()
   .then(() => {
     dbReady = true;
     console.log('Database klaar.');
+    // Automatisch archief: direct controleren (een slapende instantie
+    // wordt wakker bij de eerste bezoeker) en daarna elk uur — een
+    // avondvierdaagse raakt 's nachts "voorbij".
+    archivePastEvents();
+    setInterval(archivePastEvents, 60 * 60 * 1000).unref();
   })
   .catch((err) => console.error('Database-initialisatie mislukt:', err));
 

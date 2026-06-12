@@ -83,6 +83,12 @@ async function loadEvents() {
       const li = document.createElement('li');
       const name = document.createElement('span');
       name.textContent = ev.name;
+      if (ev.archived) {
+        const tag = document.createElement('span');
+        tag.className = 'hint';
+        tag.textContent = ' · archief';
+        name.appendChild(tag);
+      }
       li.appendChild(name);
       const links = document.createElement('span');
       links.innerHTML = `<a href="${eventLink(ev.slug)}">bekijken</a> · <a href="${eventLink(ev.slug, '/admin')}">beheer</a> · `;
@@ -94,11 +100,52 @@ async function loadEvents() {
         changeEventPassword(ev);
       });
       links.appendChild(pwdLink);
+      if (!ev.archived) {
+        links.appendChild(document.createTextNode(' · '));
+        const archiveLink = document.createElement('a');
+        archiveLink.href = '#';
+        archiveLink.textContent = 'archiveren';
+        archiveLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          archiveEvent(ev);
+        });
+        links.appendChild(archiveLink);
+      }
       li.appendChild(links);
       list.appendChild(li);
     }
   } catch {
     list.innerHTML = '<li class="hint">Let op: lijst laden mislukt.</li>';
+  }
+}
+
+// Avondvierdaagse archiveren — met het master-wachtwoord. Het jaartal
+// komt achter de naam en het webadres en op het oude webadres start een
+// verse editie (zelfde naam en beheerwachtwoord). Gebeurt ook vanzelf
+// zodra de laatste loopdag voorbij is.
+async function archiveEvent(ev) {
+  const status = document.getElementById('list-status');
+  const master = document.getElementById('master-password').value;
+  if (!master) {
+    status.textContent = 'Vul eerst het master-wachtwoord in (bovenaan).';
+    return;
+  }
+  const zeker = confirm(
+    `"${ev.name}" archiveren? Het jaartal komt achter de naam en het webadres, en op ${eventLink(ev.slug)} start een verse editie voor volgend jaar.`
+  );
+  if (!zeker) return;
+  status.textContent = 'Archiveren…';
+  const res = await fetch(`/api/events/${encodeURIComponent(ev.slug)}/archive`, {
+    method: 'POST',
+    headers: { 'x-admin-password': master },
+  });
+  if (res.ok) {
+    const { archiveSlug } = await res.json();
+    status.textContent = `Gearchiveerd — het archief staat op ${eventLink(archiveSlug)}.`;
+    loadEvents();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    status.textContent = 'Let op: ' + (err.error || 'archiveren mislukt.');
   }
 }
 

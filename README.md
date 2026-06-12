@@ -48,6 +48,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
 - **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, het percentage en de afstand tot de pauze; het gelopen deel van de route vervaagt op de kaart.
 - **Regenwaarschuwing**: bij grote kans op regen (≥ 60%, Open-Meteo) tijdens het loopvenster (starttijd tot ~3 uur erna) van de eerstvolgende loopdag verschijnt automatisch een mededeling over paraplu/regenkleding.
+- **Automatisch archief**: is de laatste loopdag voorbij, dan krijgt de avondvierdaagse vanzelf het jaartal achter de naam en het webadres (`syncope.a4droute.nl` → `syncope2026.a4droute.nl`) en staat er op het oude webadres een verse editie klaar voor het volgende jaar — zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg. Het archief blijft gewoon te bekijken en staat op de landingspagina onder "Eerdere edities". Via het platformbeheer (`/admin` op het hoofddomein) kan archiveren ook handmatig, bijvoorbeeld als er geen loopdagen zijn ingevuld.
 
 ## Lokaal draaien
 

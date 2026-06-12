@@ -27,8 +27,8 @@
       border-radius: var(--radius);
       padding: 1rem;
     }
-    #event-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
-    #event-list a {
+    #event-list, #archive-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    #event-list a, #archive-list a {
       display: block;
       background: var(--bg);
       border: 1px solid var(--line);
@@ -38,7 +38,8 @@
       color: var(--ink);
       text-decoration: none;
     }
-    #event-list a:hover { border-color: var(--brand); }
+    #event-list a:hover, #archive-list a:hover { border-color: var(--brand); }
+    #archive-list a { color: var(--muted); }
     .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
     .landing input { margin-bottom: 0.2rem; }
     .slug-preview { font-size: 0.8rem; color: var(--muted); }
@@ -62,6 +63,11 @@
     <div class="card">
       <h2>Kies jouw avondvierdaagse</h2>
       <ul id="event-list"><li class="hint">Laden…</li></ul>
+    </div>
+
+    <div class="card" id="archive-card" hidden>
+      <h2>Eerdere edities</h2>
+      <ul id="archive-list"></ul>
     </div>
 
   </div>
