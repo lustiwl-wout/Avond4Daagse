@@ -524,3 +524,21 @@ details > *:not(summary) { margin-top: 0.5rem; }
 /* Dagkeuze + GPS op één compacte regel (bezoekerspagina). */
 .button-row select { flex: 1; min-width: 0; border-width: 2px; }
 .button-row #gps-start, .button-row #gps-stop { margin-top: 0; }
+
+/* Teamkleur: klikbaar bolletje (native kleurkiezer). */
+.team-color {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+}
+.team-color::-webkit-color-swatch-wrapper { padding: 0; }
+.team-color::-webkit-color-swatch { border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 50%; }
+.team-color::-moz-color-swatch { border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 50%; }

@@ -1283,7 +1283,31 @@ function renderTeams() {
   for (const t of teams) {
     const li = document.createElement('li');
     const label = document.createElement('span');
-    label.innerHTML = `<span class="day-dot" style="background:${t.color}"></span>${t.name}`;
+    // Klikbaar kleurbolletje: native kleurkiezer om de teamkleur aan te passen.
+    const colorInput = document.createElement('input');
+    colorInput.type = 'color';
+    colorInput.className = 'team-color';
+    colorInput.value = t.color;
+    colorInput.title = 'Klik om de teamkleur aan te passen';
+    colorInput.addEventListener('change', async () => {
+      const res = await fetch(api(`/admin/teams/${t.id}`), {
+        method: 'PUT',
+        headers: adminHeaders(true),
+        body: JSON.stringify({ color: colorInput.value }),
+      });
+      if (res.ok) {
+        t.color = colorInput.value;
+        refreshVrLayer(); // ruitjes kleuren mee
+        setVrStatus(`Kleur van "${t.name}" aangepast.`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        colorInput.value = t.color;
+        setVrStatus('Let op: ' + (err.error || 'kleur opslaan mislukt.'));
+      }
+    });
+    const name = document.createElement('span');
+    name.textContent = t.name;
+    label.append(colorInput, name);
     li.appendChild(label);
 
     const controls = document.createElement('span');
