@@ -168,6 +168,13 @@ function formatDayDate(day) {
 }
 
 function renderDistanceList() {
+  // De dag-keuzelijst meteen informatiever maken: afstand erbij.
+  document.querySelectorAll('#day-select option').forEach((opt) => {
+    const r = routes[Number(opt.value)];
+    opt.textContent = `Dag ${opt.value}${
+      r && r.distance_m ? ` · ${(r.distance_m / 1000).toFixed(1).replace('.', ',')} km` : ''
+    }`;
+  });
   const list = document.getElementById('distance-list');
   list.innerHTML = '';
   for (let day = 1; day <= 4; day++) {
@@ -368,9 +375,10 @@ function expectedFinish(along, left) {
 
 function selectDayTab(day) {
   selectedDay = Number(day);
-  document.querySelectorAll('.day-tab').forEach((tab) => {
-    tab.classList.toggle('active', Number(tab.dataset.day) === selectedDay);
-  });
+  const select = document.getElementById('day-select');
+  select.value = String(selectedDay);
+  // Subtiele kleurhint van de gekozen dag.
+  select.style.borderColor = DAY_COLORS[selectedDay];
   applySelection();
   // Voortgang hoort bij de gekozen dag: opnieuw bepalen met de huidige positie.
   progressAlong = null;
@@ -378,9 +386,7 @@ function selectDayTab(day) {
   if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
 }
 
-document.querySelectorAll('.day-tab').forEach((tab) => {
-  tab.addEventListener('click', () => selectDayTab(tab.dataset.day));
-});
+document.getElementById('day-select').addEventListener('change', (e) => selectDayTab(e.target.value));
 
 const gps = setupGps(() => map, updateProgress);
 init();

@@ -31,16 +31,13 @@
   <main>
     <aside id="sidebar">
       <section>
-        <div id="day-tabs">
-          <button class="day-tab active" data-day="1">Dag 1</button>
-          <button class="day-tab" data-day="2">Dag 2</button>
-          <button class="day-tab" data-day="3">Dag 3</button>
-          <button class="day-tab" data-day="4">Dag 4</button>
-        </div>
-      </section>
-
-      <section>
         <div class="button-row">
+          <select id="day-select" aria-label="Kies de loopdag">
+            <option value="1">Dag 1</option>
+            <option value="2">Dag 2</option>
+            <option value="3">Dag 3</option>
+            <option value="4">Dag 4</option>
+          </select>
           <button id="gps-start" class="primary">Start GPS</button>
           <button id="gps-stop" class="danger hidden">Stop GPS</button>
         </div>
