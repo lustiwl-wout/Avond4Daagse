@@ -422,10 +422,41 @@ details > *:not(summary) { margin-top: 0.5rem; }
   cursor: crosshair;
 }
 
-/* Voortgang langs de route (bezoekers met GPS aan). */
-#route-progress { margin-top: 0.5rem; }
+/* Voortgang langs de route (bezoekers met GPS aan): prominente kaart. */
+#route-progress {
+  margin-top: 0.6rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.85rem;
+}
+.progress-stats {
+  display: flex;
+  text-align: center;
+  margin-bottom: 0.65rem;
+}
+.progress-stats > div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.progress-stats > div + div { border-left: 1px solid var(--line); }
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--brand-dark);
+  line-height: 1.15;
+}
+.stat-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+#route-progress .hint { margin: 0.45rem 0 0; text-align: center; }
 .progress-track {
-  height: 8px;
+  height: 12px;
   background: var(--line);
   border-radius: var(--radius-pill);
   overflow: hidden;

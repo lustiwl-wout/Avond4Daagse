@@ -346,12 +346,17 @@ function updateProgress(pos) {
   const left = Math.max(0, r.total - along);
   const pct = Math.min(100, Math.round((along / r.total) * 100));
   document.getElementById('progress-fill').style.width = pct + '%';
-  let text = `${fmtDist(along)} gelopen · nog ${fmtDist(left)} (${pct}%)`;
-  if (r.pauseAlong !== null && r.pauseAlong - along > 25) {
-    text += ` · pauze over ${fmtDist(r.pauseAlong - along)}`;
-  }
+  document.getElementById('stat-done').textContent = fmtDist(along);
+  document.getElementById('stat-left').textContent = fmtDist(left);
+  // Derde blok: verwachte finishtijd zodra het eigen tempo bekend is,
+  // tot die tijd het percentage.
   const eta = expectedFinish(along, left);
-  if (eta) text += ` · verwachte finish ${eta}`;
+  document.getElementById('stat-third').textContent = eta ? `±${eta}` : `${pct}%`;
+  document.getElementById('stat-third-label').textContent = eta ? 'verwachte finish' : 'voortgang';
+  let text = eta ? `${pct}% van de route` : '';
+  if (r.pauseAlong !== null && r.pauseAlong - along > 25) {
+    text += `${text ? ' · ' : ''}pauzepunt over ${fmtDist(r.pauseAlong - along)}`;
+  }
   document.getElementById('progress-text').textContent = text;
   box.classList.remove('hidden');
 }
