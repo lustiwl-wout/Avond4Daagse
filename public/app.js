@@ -99,12 +99,10 @@ async function loadRoutes() {
   applySelection();
 }
 
-// Mededeling van de organisatie als balk onder de header.
+// Mededeling van de organisatie als balk onder de header — wegklikbaar;
+// komt pas terug als de tekst verandert (nieuwe melding).
 function showAnnouncement(text) {
-  const el = document.getElementById('announce');
-  if (!el) return;
-  el.textContent = text || '';
-  el.classList.toggle('hidden', !text);
+  showBanner('announce', text, `a4d-announce-gezien-${SLUG}`, text || '');
 }
 
 // Regenwaarschuwing: geen weerbericht per dag, maar één duidelijke
@@ -144,9 +142,15 @@ async function loadRainNotice(day) {
       day: 'numeric',
       month: 'long',
     }).format(new Date(e.date + 'T12:00:00'));
-    const el = document.getElementById('rain-notice');
-    el.textContent = `Grote kans op regen tijdens de wandeling op ${datum} (${rain}%) — denk aan een paraplu of regenkleding.`;
-    el.classList.remove('hidden');
+    // Wegklikbaar; de datum is het kenmerk — weggeklikt voor deze loopdag
+    // blijft weg (ook als het percentage wat schommelt), de volgende
+    // loopdag is een nieuwe melding.
+    showBanner(
+      'rain-notice',
+      `Grote kans op regen tijdens de wandeling op ${datum} (${rain}%) — denk aan een paraplu of regenkleding.`,
+      `a4d-regen-gezien-${SLUG}`,
+      e.date
+    );
   } catch {
     // de waarschuwing is een extraatje
   }

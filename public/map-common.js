@@ -16,6 +16,39 @@ function eventUrl(p) {
   return p || '/';
 }
 
+// Wegklikbare meldingsbalk (mededeling van de organisatie, regenmelding).
+// Wegklikken wordt per event onthouden via `fingerprint`: dezelfde melding
+// komt niet terug, een nieuwe (ander fingerprint) wél.
+function showBanner(elId, text, storeKey, fingerprint) {
+  const el = document.getElementById(elId);
+  if (!el || !text) return;
+  let seen = null;
+  try {
+    seen = localStorage.getItem(storeKey);
+  } catch {
+    // zonder opslag werkt de balk ook — alleen zonder geheugen
+  }
+  if (seen === fingerprint) return;
+  el.innerHTML = '';
+  const span = document.createElement('span');
+  span.textContent = text;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'announce-close';
+  close.setAttribute('aria-label', 'Melding sluiten');
+  close.textContent = '✕';
+  close.addEventListener('click', () => {
+    el.classList.add('hidden');
+    try {
+      localStorage.setItem(storeKey, fingerprint);
+    } catch {
+      // niet kritisch
+    }
+  });
+  el.append(span, close);
+  el.classList.remove('hidden');
+}
+
 function createMap(elementId, center, zoom) {
   const map = L.map(elementId).setView([center.lat, center.lng], zoom);
   const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {

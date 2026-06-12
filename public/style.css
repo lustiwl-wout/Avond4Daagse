@@ -470,3 +470,22 @@ details > *:not(summary) { margin-top: 0.5rem; }
 }
 
 .qr-download { margin-top: 0.4rem; font-size: 0.75rem; padding: 0.3rem 0.7rem; }
+
+.announce {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+.announce-close {
+  background: none;
+  border: none;
+  color: inherit;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+}
+.announce-close:hover { background: rgba(0, 0, 0, 0.07); }
