@@ -1284,24 +1284,39 @@ eventApi.post('/admin/teams', async (req, res) => {
   }
 });
 
-// Teamkleur aanpassen.
+// Teamnaam en/of -kleur aanpassen.
 eventApi.put('/admin/teams/:id', async (req, res) => {
   if (!(await requireAdmin(req, res))) return;
   const teamId = Number(req.params.id);
-  const color = String((req.body || {}).color || '');
-  if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
-    return res.status(400).json({ error: 'Ongeldige kleur.' });
+  const body = req.body || {};
+  let color = null;
+  let name = null;
+  if (body.color !== undefined) {
+    color = String(body.color);
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) {
+      return res.status(400).json({ error: 'Ongeldige kleur.' });
+    }
+    color = color.toLowerCase();
+  }
+  if (body.name !== undefined) {
+    name = String(body.name).trim();
+    if (!name || name.length > 60) {
+      return res.status(400).json({ error: 'Geef een teamnaam van 1–60 tekens.' });
+    }
+  }
+  if (color === null && name === null) {
+    return res.status(400).json({ error: 'Niets om aan te passen.' });
   }
   try {
     const { rowCount } = await pool.query(
-      'UPDATE teams SET color = $1 WHERE id = $2 AND event_id = $3',
-      [color.toLowerCase(), teamId, req.event.id]
+      'UPDATE teams SET color = COALESCE($1, color), name = COALESCE($2, name) WHERE id = $3 AND event_id = $4',
+      [color, name, teamId, req.event.id]
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Team niet gevonden.' });
     res.status(204).end();
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Kleur opslaan mislukt.' });
+    res.status(500).json({ error: 'Team opslaan mislukt.' });
   }
 });
 

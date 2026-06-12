@@ -1305,8 +1305,37 @@ function renderTeams() {
         setVrStatus('Let op: ' + (err.error || 'kleur opslaan mislukt.'));
       }
     });
-    const name = document.createElement('span');
-    name.textContent = t.name;
+    const name = document.createElement('input');
+    name.type = 'text';
+    name.className = 'team-name';
+    name.value = t.name;
+    name.maxLength = 60;
+    name.title = 'Klik om de teamnaam aan te passen';
+    name.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') name.blur();
+    });
+    name.addEventListener('change', async () => {
+      const newName = name.value.trim();
+      if (!newName || newName === t.name) {
+        name.value = t.name;
+        return;
+      }
+      const res = await fetch(api(`/admin/teams/${t.id}`), {
+        method: 'PUT',
+        headers: adminHeaders(true),
+        body: JSON.stringify({ name: newName }),
+      });
+      if (res.ok) {
+        t.name = newName;
+        name.value = newName;
+        refreshVrLayer(); // labels in menu's en titels kleuren/namen mee
+        setVrStatus(`Team hernoemd naar "${newName}".`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        name.value = t.name;
+        setVrStatus('Let op: ' + (err.error || 'teamnaam opslaan mislukt.'));
+      }
+    });
     label.append(colorInput, name);
     li.appendChild(label);
 

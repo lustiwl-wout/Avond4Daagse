@@ -542,3 +542,19 @@ details > *:not(summary) { margin-top: 0.5rem; }
 .team-color::-webkit-color-swatch-wrapper { padding: 0; }
 .team-color::-webkit-color-swatch { border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 50%; }
 .team-color::-moz-color-swatch { border: 1px solid rgba(0, 0, 0, 0.15); border-radius: 50%; }
+
+/* Teamnaam: ter plekke te bewerken (vlak veld, pas zichtbaar bij focus). */
+#team-list .team-name {
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  padding: 0.15rem 0.3rem;
+  width: 11rem;
+  max-width: 100%;
+}
+#team-list .team-name:hover { border-color: var(--line); }
+#team-list .team-name:focus { border-color: var(--brand); outline: none; background: var(--card); }
+#team-list li > span:first-child { display: flex; align-items: center; flex: 1; min-width: 0; }
