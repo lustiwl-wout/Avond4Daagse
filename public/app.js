@@ -249,8 +249,6 @@ function onMapClick(e) {
 // zo springt de teller niet heen en weer.
 const ON_ROUTE_M = 60;
 let progressAlong = null;
-// Recente (tijd, positie-langs-route)-metingen voor het eigen wandeltempo.
-let paceSamples = [];
 
 function routeProgress(path, pos) {
   const candidates = [];
@@ -328,7 +326,6 @@ function updateProgress(pos) {
   if (!pos || !r) {
     box.classList.add('hidden');
     progressAlong = null;
-    paceSamples = [];
     updateWalkedLine(null, null);
     return;
   }
@@ -337,7 +334,6 @@ function updateProgress(pos) {
     // Naast de route (bv. onderweg ernaartoe): geen voortgang tonen.
     box.classList.add('hidden');
     progressAlong = null;
-    paceSamples = [];
     updateWalkedLine(null, null);
     return;
   }
@@ -348,34 +344,13 @@ function updateProgress(pos) {
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('stat-done').textContent = fmtDist(along);
   document.getElementById('stat-left').textContent = fmtDist(left);
-  // Derde blok: verwachte finishtijd zodra het eigen tempo bekend is,
-  // tot die tijd het percentage.
-  const eta = expectedFinish(along, left);
-  document.getElementById('stat-third').textContent = eta ? `±${eta}` : `${pct}%`;
-  document.getElementById('stat-third-label').textContent = eta ? 'verwachte finish' : 'voortgang';
-  let text = eta ? `${pct}% van de route` : '';
+  document.getElementById('stat-third').textContent = `${pct}%`;
+  let text = '';
   if (r.pauseAlong !== null && r.pauseAlong - along > 25) {
-    text += `${text ? ' · ' : ''}pauzepunt over ${fmtDist(r.pauseAlong - along)}`;
+    text = `pauzepunt over ${fmtDist(r.pauseAlong - along)}`;
   }
   document.getElementById('progress-text').textContent = text;
   box.classList.remove('hidden');
-}
-
-// Verwachte finishtijd uit het eigen, recent gemeten wandeltempo (laatste
-// 10 minuten). Pas tonen na 2 minuten en 100 m voortgang, en alleen bij
-// een geloofwaardig tempo.
-function expectedFinish(along, left) {
-  const now = Date.now();
-  paceSamples.push({ t: now, along });
-  paceSamples = paceSamples.filter((s) => now - s.t <= 10 * 60 * 1000);
-  const first = paceSamples[0];
-  const dt = (now - first.t) / 1000;
-  const dAlong = along - first.along;
-  if (dt < 120 || dAlong < 100) return null;
-  const speed = dAlong / dt; // m/s
-  if (speed < 0.2 || speed > 3) return null;
-  const finish = new Date(now + (left / speed) * 1000);
-  return `${String(finish.getHours()).padStart(2, '0')}:${String(finish.getMinutes()).padStart(2, '0')}`;
 }
 
 function selectDayTab(day) {
@@ -387,7 +362,6 @@ function selectDayTab(day) {
   applySelection();
   // Voortgang hoort bij de gekozen dag: opnieuw bepalen met de huidige positie.
   progressAlong = null;
-  paceSamples = [];
   if (typeof gps !== 'undefined') updateProgress(gps.getPosition());
 }
 
