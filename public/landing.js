@@ -1,5 +1,5 @@
-// Landingspagina: lijst van avondvierdaagsen. Nieuwe aanmaken kan alleen
-// via /beheer (platformbeheerder).
+// Startpagina: de huidige editie bovenaan, eerdere jaren onder "Eerdere
+// edities". Beheer (wachtwoord wijzigen, archiveren) gaat via /admin.
 async function loadEvents() {
   const list = document.getElementById('event-list');
   try {
@@ -20,7 +20,7 @@ async function loadEvents() {
     };
     const current = events.filter((ev) => !ev.archived);
     if (current.length === 0) {
-      list.innerHTML = '<li class="hint">Er zijn nog geen avondvierdaagsen gepubliceerd.</li>';
+      list.innerHTML = '<li class="hint">De editie van dit jaar staat nog niet klaar.</li>';
     } else {
       for (const ev of current) list.appendChild(render(ev));
     }

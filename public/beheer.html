@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="color-scheme" content="only light" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Platformbeheer — Avond4Daagse Routeplanner</title>
+  <title>Beheer — Avondvierdaagse Syncope</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -28,7 +28,6 @@
       padding: 1rem;
     }
     .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
-    .slug-preview { font-size: 0.8rem; color: var(--muted); margin-top: 0.3rem; }
     #event-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
     #event-list li {
       background: var(--bg);
@@ -52,8 +51,8 @@
         <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
       </svg>
       <div>
-        <h1>Platformbeheer</h1>
-        <p class="sub">Avond4Daagse Routeplanner</p>
+        <h1>Beheer</h1>
+        <p class="sub">Avondvierdaagse Syncope</p>
       </div>
     </div>
     <a href="/" id="back-link">Startpagina</a>
@@ -61,27 +60,18 @@
 
   <div class="landing">
     <div class="card">
-      <h2>Nieuwe avondvierdaagse aanmaken</h2>
-      <label for="master-password">Master-wachtwoord (platformbeheerder)</label>
+      <h2>Master-wachtwoord</h2>
+      <label for="master-password">Voor het wijzigen van een beheerwachtwoord of het archiveren van een afgelopen editie</label>
       <input type="password" id="master-password" />
-      <label for="new-name">Naam van de organisatie</label>
-      <input type="text" id="new-name" placeholder="bijv. Basisschool De Regenboog" maxlength="60" />
-      <label for="new-slug">Webadres</label>
-      <input type="text" id="new-slug" placeholder="bijv. de-regenboog" maxlength="40" />
-      <p class="slug-preview" id="slug-preview"></p>
-      <label for="new-password">Beheerwachtwoord voor deze avondvierdaagse (minimaal 6 tekens)</label>
-      <input type="password" id="new-password" />
-      <button id="create-btn" class="primary" style="width:100%; margin-top:0.8rem">Aanmaken</button>
-      <p id="create-status" class="hint"></p>
     </div>
 
     <div class="card">
-      <h2>Bestaande avondvierdaagsen</h2>
+      <h2>Edities</h2>
       <ul id="event-list"><li class="hint">Laden…</li></ul>
       <p class="hint" style="margin-top:0.6rem">
-        Wachtwoord wijzigen en archiveren gebruiken het master-wachtwoord hierboven.
-        Archiveren zet het jaartal achter de naam en het webadres en start op het oude
-        webadres een verse editie; aan de gearchiveerde editie verandert verder niets.
+        Archiveren zet het jaartal achter de naam en het webadres (bijv.
+        syncope&nbsp;→&nbsp;syncope2026) en start op het oude webadres een verse editie voor
+        volgend jaar; aan de gearchiveerde editie verandert verder niets.
       </p>
       <p id="list-status" class="hint"></p>
     </div>

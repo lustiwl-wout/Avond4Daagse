@@ -145,6 +145,7 @@ async function init() {
   const config = await res.json();
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
+  if (config.orgName) document.title = 'Beheer — ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   schedule = config.schedule || null;

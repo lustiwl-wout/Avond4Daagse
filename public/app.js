@@ -16,6 +16,7 @@ async function init() {
   const config = await res.json();
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = '' + config.orgName;
+  if (config.orgName) document.title = config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   showAnnouncement(config.announcement);

@@ -47,6 +47,7 @@ async function init() {
   const config = await cfgRes.json();
   svStaticKey = config.googleMapsApiKey || '';
   orgName = config.orgName || '';
+  if (orgName) document.title = 'Verkeersregelaarsplan — ' + orgName;
   startFinish = config.startFinish;
   eventSchedule = config.schedule || null;
   if (config.vrSettings) vrSettings = { ...vrSettings, ...config.vrSettings };

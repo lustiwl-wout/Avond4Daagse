@@ -1,70 +1,13 @@
-// Platformbeheer (hoofddomein/admin): nieuwe avondvierdaagsen aanmaken met
-// het master-wachtwoord, en de bestaande lijst inzien.
-function slugify(name) {
-  return String(name)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-}
+// Beheer (hoofddomein/admin): de edities inzien, een beheerwachtwoord
+// wijzigen of een afgelopen editie archiveren — alles met het
+// master-wachtwoord.
 
-const nameInput = document.getElementById('new-name');
-const slugInput = document.getElementById('new-slug');
-const preview = document.getElementById('slug-preview');
-let slugTouched = false;
-// Elk event leeft op een eigen subdomein; het basisdomein komt van de server.
+// Elke editie leeft op een eigen subdomein; het basisdomein komt van de server.
 let baseDomain = location.hostname;
 
 function eventLink(slug, page = '') {
   return `${location.protocol}//${slug}.${baseDomain}${page}`;
 }
-
-function updatePreview() {
-  preview.textContent = slugInput.value ? `Pagina: ${eventLink(slugInput.value)}` : '';
-}
-
-nameInput.addEventListener('input', () => {
-  if (!slugTouched) slugInput.value = slugify(nameInput.value);
-  updatePreview();
-});
-
-slugInput.addEventListener('input', () => {
-  slugTouched = true;
-  slugInput.value = slugify(slugInput.value);
-  updatePreview();
-});
-
-document.getElementById('create-btn').addEventListener('click', async () => {
-  const status = document.getElementById('create-status');
-  status.textContent = 'Aanmaken…';
-  const res = await fetch('/api/events', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-password': document.getElementById('master-password').value,
-    },
-    body: JSON.stringify({
-      name: nameInput.value,
-      slug: slugInput.value,
-      password: document.getElementById('new-password').value,
-    }),
-  });
-  if (res.ok) {
-    const { slug } = await res.json();
-    status.textContent = `Gelukt! De avondvierdaagse staat op ${eventLink(slug)} — beheer via ${eventLink(slug, '/admin')}.`;
-    nameInput.value = '';
-    slugInput.value = '';
-    document.getElementById('new-password').value = '';
-    slugTouched = false;
-    updatePreview();
-    loadEvents();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    status.textContent = 'Let op: ' + (err.error || 'aanmaken mislukt.');
-  }
-});
 
 async function loadEvents() {
   const list = document.getElementById('event-list');
@@ -74,9 +17,8 @@ async function loadEvents() {
     const { baseDomain: base, events } = await res.json();
     if (base) baseDomain = base;
     list.innerHTML = '';
-    updatePreview();
     if (events.length === 0) {
-      list.innerHTML = '<li class="hint">Nog geen avondvierdaagsen.</li>';
+      list.innerHTML = '<li class="hint">Nog geen editie.</li>';
       return;
     }
     for (const ev of events) {

@@ -1,6 +1,6 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor het organiseren van avondvierdaagsen — één installatie host er meerdere tegelijk. De platformbeheerder maakt op het hoofddomein onder `/admin` (master-wachtwoord) avondvierdaagsen aan; elke organisatie krijgt een eigen webadres, een eigen beheerwachtwoord en: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, en verkeersregelaarsplanning met printversie. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
+Webapp voor de avondvierdaagse van Basisschool Syncope in Almere: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, en verkeersregelaarsplanning met printversie. De lopende editie staat op `syncope.a4droute.nl`; is een editie voorbij, dan archiveert de beheerder die met één knop onder een jaartal (`syncope2026.a4droute.nl`) en staat op het hoofdadres meteen een verse editie klaar voor het volgende jaar. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
 
 Bestaat de installatie al langer met één organisatie, dan migreert de bestaande data bij het opstarten automatisch naar het event `syncope`; het oude `ADMIN_PASSWORD` blijft daar werken.
 
@@ -8,8 +8,8 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 | URL | Voor wie | Wat |
 |---|---|---|
-| `/` | Iedereen | Landingspagina met de lijst van avondvierdaagsen |
-| `/admin` (hoofddomein) | Platformbeheerder (master-wachtwoord) | Avondvierdaagsen aanmaken en overzien |
+| `/` | Iedereen | Startpagina met de huidige editie en eerdere jaren |
+| `/admin` (hoofddomein) | Beheerder (master-wachtwoord) | Edities overzien, archiveren en beheerwachtwoorden wijzigen |
 | `<naam>.a4droute.nl` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
 | `<naam>.a4droute.nl/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
 | `<naam>.a4droute.nl/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
@@ -48,7 +48,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
 - **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, het percentage en de afstand tot de pauze; het gelopen deel van de route vervaagt op de kaart.
 - **Regenwaarschuwing**: bij grote kans op regen (≥ 60%, Open-Meteo) tijdens het loopvenster (starttijd tot ~3 uur erna) van de eerstvolgende loopdag verschijnt automatisch een mededeling over paraplu/regenkleding.
-- **Archiveren na afloop**: met de archiveerknop in het platformbeheer (`/admin` op het hoofddomein) zet de platformbeheerder een afgelopen avondvierdaagse in het archief — er gebeurt nooit iets vanzelf. Het jaartal komt achter de naam en het webadres (`syncope.a4droute.nl` → `syncope2026.a4droute.nl`) en op het oude webadres staat direct een verse editie klaar voor het volgende jaar: zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief zelf verandert verder niets — het blijft gewoon te bekijken en staat op de landingspagina onder "Eerdere edities".
+- **Archiveren na afloop**: met de archiveerknop in het beheer (`/admin` op het hoofddomein) zet de beheerder een afgelopen editie in het archief — er gebeurt nooit iets vanzelf. Het jaartal komt achter de naam en het webadres (`syncope.a4droute.nl` → `syncope2026.a4droute.nl`) en op het oude webadres staat direct een verse editie klaar voor het volgende jaar: zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief zelf verandert verder niets — het blijft gewoon te bekijken en staat op de startpagina onder "Eerdere edities".
 
 ## Lokaal draaien
 
