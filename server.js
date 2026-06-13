@@ -121,7 +121,7 @@ function checkMaster(given) {
   );
 }
 
-const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'simulate', 'favicon.ico', '']);
+const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'edities', 'simulate', 'favicon.ico', '']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 let pool = null;
@@ -376,25 +376,24 @@ function computeDefaultDay(eventSetting) {
 }
 
 // --- Archief ---
-// De platformbeheerder archiveert een afgelopen avondvierdaagse zelf, met
-// de archiveerknop in het platformbeheer. Die zet het jaartal achter de
-// naam en het webadres (syncope → syncope2026) en zet op het oude
-// webadres een verse editie klaar voor het volgende jaar: zelfde naam en
-// beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes,
-// oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief
-// verandert verder niets: het blijft gewoon te bekijken en te beheren op
-// het nieuwe adres.
+// De lopende editie staat op het hoofddomein (a4droute.nl). De beheerder
+// archiveert een afgelopen editie zelf met de archiveerknop in het beheer:
+// die verhuist de editie naar een webadres met het jaartal (2026 →
+// 2026.a4droute.nl), zet het jaartal achter de naam en zet op het
+// hoofddomein een verse editie klaar voor het volgende jaar — zelfde naam
+// en beheerwachtwoord, start/finish en tempo-instellingen gaan mee;
+// routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het
+// archief verandert verder niets: het blijft te bekijken en te beheren op
+// zijn jaar-webadres.
 
-// Eerste vrije archief-webadres: slug2026, anders slug2026-2, … — binnen
-// de 40 tekens die SLUG_RE toestaat.
-async function freeArchiveSlug(client, baseSlug, year) {
+// Eerste vrije archief-webadres: het jaartal (2026), anders 2026-2, …
+async function freeArchiveSlug(client, year) {
   for (let i = 1; i <= 9; i++) {
-    const suffix = i === 1 ? year : `${year}-${i}`;
-    const slug = baseSlug.slice(0, 40 - suffix.length) + suffix;
+    const slug = i === 1 ? year : `${year}-${i}`;
     const { rows } = await client.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
     if (rows.length === 0) return slug;
   }
-  throw new Error(`geen vrij archief-webadres voor "${baseSlug}${year}"`);
+  throw new Error(`geen vrij archief-webadres voor jaar ${year}`);
 }
 
 // Archiveert één event en zet de verse editie klaar. Geeft het
@@ -414,7 +413,7 @@ async function archiveEvent(eventId, year) {
       return null;
     }
     const { slug, name, password_hash } = rows[0];
-    const archiveSlug = await freeArchiveSlug(client, slug, year);
+    const archiveSlug = await freeArchiveSlug(client, year);
     const archiveName = name.endsWith(year) ? name : `${name} ${year}`;
     await client.query('UPDATE events SET slug = $1, name = $2, archived_at = now() WHERE id = $3', [
       archiveSlug,
@@ -795,9 +794,14 @@ app.use(
   async (req, res, next) => {
     if (!requireDb(res)) return;
     try {
-      const { rows } = await pool.query('SELECT * FROM events WHERE slug = $1', [
-        String(req.params.slug).toLowerCase(),
-      ]);
+      const slug = String(req.params.slug).toLowerCase();
+      // '_live' = de lopende, niet-gearchiveerde editie. Het hoofddomein
+      // (a4droute.nl) heeft geen subdomein-slug en gebruikt dit, zodat de
+      // bezoekers- en beheerpagina's daar de actuele editie tonen.
+      const { rows } =
+        slug === '_live'
+          ? await pool.query('SELECT * FROM events WHERE archived_at IS NULL ORDER BY id LIMIT 1')
+          : await pool.query('SELECT * FROM events WHERE slug = $1', [slug]);
       if (rows.length === 0) return res.status(404).json({ error: 'Onbekende avondvierdaagse.' });
       req.event = rows[0];
       next();
@@ -1532,9 +1536,9 @@ eventApi.delete('/admin/teams/:id', async (req, res) => {
 });
 
 // --- Pagina's ---
-// Elk event leeft op zijn eigen subdomein (syncope.a4droute.nl, via
-// BASE_DOMAIN); het hoofddomein heeft alleen de landingspagina en het
-// platformbeheer.
+// De lopende editie staat op het hoofddomein (a4droute.nl); afgelopen
+// edities op een subdomein met hun jaartal (2026.a4droute.nl). Het
+// editie-overzicht staat op /edities, het master-beheer op /beheer.
 
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || '').toLowerCase();
 
@@ -1559,39 +1563,51 @@ async function eventExists(slug) {
   }
 }
 
+// Is er een lopende (niet-gearchiveerde) editie? Zo ja, dan toont het
+// hoofddomein die; zo niet, dan valt het terug op het editie-overzicht.
+async function liveEventExists() {
+  if (!pool) return true;
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM events WHERE archived_at IS NULL LIMIT 1');
+    return rows.length > 0;
+  } catch {
+    return true;
+  }
+}
+
 function sendPage(res, file) {
   res.sendFile(path.join(__dirname, 'public', file), {
     headers: { 'Cache-Control': 'no-cache' },
   });
 }
 
-app.get('/', async (req, res) => {
+// Op een subdomein de pagina van dát event; op het hoofddomein de lopende
+// editie (de frontend gebruikt daar de '_live'-slug). `fallback` is wat het
+// hoofddomein toont als er (nog) geen lopende editie is.
+async function serveEventPage(req, res, file, fallback) {
   const hostSlug = slugFromHost(req);
-  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'index.html');
-  sendPage(res, 'landing.html');
-});
+  if (hostSlug) return (await eventExists(hostSlug)) ? sendPage(res, file) : fallback(res);
+  return (await liveEventExists()) ? sendPage(res, file) : fallback(res);
+}
 
-// /admin: op een event-subdomein het routebeheer van dat event; op het
-// hoofddomein (of de onrender-URL) het platformbeheer, waar de
-// platformbeheerder nieuwe avondvierdaagsen aanmaakt.
-app.get('/admin', async (req, res) => {
-  const hostSlug = slugFromHost(req);
-  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'admin.html');
-  sendPage(res, 'beheer.html');
-});
+app.get('/', (req, res) => serveEventPage(req, res, 'index.html', (r) => sendPage(r, 'landing.html')));
 
-// Op een subdomein staan de overige subpagina's direct in de root.
+// /admin: routebeheer van de editie — op het hoofddomein de lopende editie,
+// op een subdomein die editie. Het master-beheer staat los op /beheer.
+app.get('/admin', (req, res) => serveEventPage(req, res, 'admin.html', (r) => sendPage(r, 'landing.html')));
+
 for (const [route, file] of [
   ['/verkeer', 'verkeer.html'],
   ['/print', 'print.html'],
   ['/simulate', 'index.html'], // bezoekerspagina met gesimuleerde GPS (testen)
 ]) {
-  app.get(route, async (req, res) => {
-    const hostSlug = slugFromHost(req);
-    if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, file);
-    res.redirect('/');
-  });
+  app.get(route, (req, res) => serveEventPage(req, res, file, (r) => r.redirect('/')));
 }
+
+// Editie-overzicht (huidige editie + eerdere jaren) en het master-beheer
+// (archiveren, wachtwoorden). Beide horen bij het hoofddomein.
+app.get('/edities', (req, res) => sendPage(res, 'landing.html'));
+app.get('/beheer', (req, res) => sendPage(res, 'beheer.html'));
 
 
 // Direct luisteren — Render zet een deploy pas live zodra de poort open is,

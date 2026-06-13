@@ -2,13 +2,16 @@
 // Google wordt alleen nog gebruikt voor Street View (overlay + printfoto's).
 const DAY_COLORS = { 1: '#dc2626', 2: '#2563eb', 3: '#16a34a', 4: '#9333ea' };
 
-// Event-slug: het subdomein (syncope.a4droute.nl). Elk event leeft op zijn
-// eigen subdomein; pagina's als /verkeer en /admin staan in de root.
+// Event-slug uit het subdomein: de lopende editie staat op het hoofddomein
+// (a4droute.nl, geen subdomein), afgelopen edities op hun jaartal
+// (2026.a4droute.nl). Pagina's als /verkeer en /admin staan in de root.
 const HOST_LABELS = location.hostname.split('.');
 const SLUG = HOST_LABELS.length > 2 && HOST_LABELS[0] !== 'www' ? HOST_LABELS[0].toLowerCase() : '';
 
+// Geen subdomein-slug (hoofddomein) → '_live': de server pakt dan de
+// lopende, niet-gearchiveerde editie.
 function api(p) {
-  return `/api/${SLUG}${p}`;
+  return `/api/${SLUG || '_live'}${p}`;
 }
 
 // Link naar een pagina van dit event ('' = bezoekerspagina).

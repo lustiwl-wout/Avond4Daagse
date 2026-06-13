@@ -13,7 +13,10 @@ async function loadEvents() {
     const render = (ev) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = `${location.protocol}//${ev.slug}.${base}`;
+      // Lopende editie staat op het hoofddomein; archieven op hun jaar-subdomein.
+      a.href = ev.archived
+        ? `${location.protocol}//${ev.slug}.${base}`
+        : `${location.protocol}//${base}`;
       a.textContent = ev.name;
       li.appendChild(a);
       return li;

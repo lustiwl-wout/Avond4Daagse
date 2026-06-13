@@ -1,6 +1,6 @@
 # 🚶 Avond4Daagse Routeplanner
 
-Webapp voor de avondvierdaagse van Basisschool Syncope in Almere: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, en verkeersregelaarsplanning met printversie. De lopende editie staat op `syncope.a4droute.nl`; is een editie voorbij, dan archiveert de beheerder die met één knop onder een jaartal (`syncope2026.a4droute.nl`) en staat op het hoofdadres meteen een verse editie klaar voor het volgende jaar. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
+Webapp voor de avondvierdaagse van Basisschool Syncope in Almere: wandelroutes per dag op de kaart (OpenStreetMap), GPS voor de lopers, en verkeersregelaarsplanning met printversie. De lopende editie staat op het hoofddomein (`a4droute.nl`); is een editie voorbij, dan archiveert de beheerder die met één knop onder zijn jaartal (`2026.a4droute.nl`) en staat op het hoofddomein meteen een verse editie klaar voor het volgende jaar. Data staat in een (gratis) Neon PostgreSQL-database, de app draait op Render.
 
 Bestaat de installatie al langer met één organisatie, dan migreert de bestaande data bij het opstarten automatisch naar het event `syncope`; het oude `ADMIN_PASSWORD` blijft daar werken.
 
@@ -8,16 +8,17 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 
 | URL | Voor wie | Wat |
 |---|---|---|
-| `/` | Iedereen | Startpagina met de huidige editie en eerdere jaren |
-| `/admin` (hoofddomein) | Beheerder (master-wachtwoord) | Edities overzien, archiveren en beheerwachtwoorden wijzigen |
-| `<naam>.a4droute.nl` | Iedereen | Routes van dag 1 t/m 4 bekijken, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
-| `<naam>.a4droute.nl/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
-| `<naam>.a4droute.nl/admin` | Beheer (eigen wachtwoord per event) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
-| `<naam>.a4droute.nl/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
+| `a4droute.nl` | Iedereen | De lopende editie: routes van dag 1 t/m 4, afstanden, GPS om jezelf te volgen, Street View. Mobiel-eerst. |
+| `a4droute.nl/verkeer` | Verkeersregelaars (geen wachtwoord; bewust nergens gelinkt — deel de URL zelf) | Team kiezen, eigen posten + tijdschema zien en per post navigeren via Google Maps |
+| `a4droute.nl/admin` | Beheer (eigen wachtwoord) | Routes tekenen (ook al lopend via GPS), oversteekpunten, teams en loopdagen beheren |
+| `a4droute.nl/print?day=N` | Beheer | Printversie van het verkeersregelaarsplan per dag |
+| `a4droute.nl/edities` | Iedereen | Overzicht van de huidige editie en eerdere jaren |
+| `a4droute.nl/beheer` | Beheerder (master-wachtwoord) | Een afgelopen editie archiveren en beheerwachtwoorden wijzigen |
+| `<jaar>.a4droute.nl` | Iedereen | Een gearchiveerde editie (bijv. `2026.a4droute.nl`) met dezelfde pagina's (`/verkeer`, `/admin`, `/print`) |
 
 ## Routes beheren (`/admin`)
 
-- Log in met het beheerwachtwoord van jouw event (gekozen bij het aanmaken; te wijzigen in de admin onder "Beheerwachtwoord wijzigen"). Het master-wachtwoord van de platformbeheerder (omgevingsvariabele `ADMIN_PASSWORD`) werkt op elk event. Eventwachtwoorden staan als scrypt-hash met salt in de database; oudere installaties worden bij de eerste login automatisch geüpgraded.
+- Log in met het beheerwachtwoord van de editie (te wijzigen in de admin onder "Beheerwachtwoord wijzigen"; een verse editie erft het wachtwoord van de vorige). Het master-wachtwoord (omgevingsvariabele `ADMIN_PASSWORD`) werkt op elke editie en op het beheer (`/beheer`). Wachtwoorden staan als scrypt-hash met salt in de database; oudere installaties worden bij de eerste login automatisch geüpgraded.
 - **Start en finish liggen vast** op één punt dat voor alle vier de dagen geldt: zoek het adres op in de admin of sleep de vlag op zijn plek. Bezoekers zien alleen de vlag, geen adres.
 - Kies een dag en klik op de kaart om tussenpunten toe te voegen — de route loopt **altijd wandelend** van 🏁 via de tussenpunten terug naar 🏁 (Google Directions, wandelmodus) en je ziet live de afstand in km.
 - Elk tussenpunt is te bewerken: **sleep** een punt om hem te verplaatsen, **klik** op een punt voor een menu met Street View, verwijderen of een nieuw punt ertussen voegen.
@@ -48,7 +49,7 @@ Bestaat de installatie al langer met één organisatie, dan migreert de bestaand
 - **GPX-download** per dag in de afstandenlijst, voor sporthorloges en navigatie-apps.
 - **Voortgang voor lopers**: met GPS aan zie je hoeveel je gelopen hebt, wat er nog komt, het percentage en de afstand tot de pauze; het gelopen deel van de route vervaagt op de kaart.
 - **Regenwaarschuwing**: bij grote kans op regen (≥ 60%, Open-Meteo) tijdens het loopvenster (starttijd tot ~3 uur erna) van de eerstvolgende loopdag verschijnt automatisch een mededeling over paraplu/regenkleding.
-- **Archiveren na afloop**: met de archiveerknop in het beheer (`/admin` op het hoofddomein) zet de beheerder een afgelopen editie in het archief — er gebeurt nooit iets vanzelf. Het jaartal komt achter de naam en het webadres (`syncope.a4droute.nl` → `syncope2026.a4droute.nl`) en op het oude webadres staat direct een verse editie klaar voor het volgende jaar: zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief zelf verandert verder niets — het blijft gewoon te bekijken en staat op de startpagina onder "Eerdere edities".
+- **Archiveren na afloop**: met de archiveerknop in het beheer (`a4droute.nl/beheer`, master-wachtwoord) zet de beheerder een afgelopen editie in het archief — er gebeurt nooit iets vanzelf. De editie verhuist naar een webadres met het jaartal (`a4droute.nl` → `2026.a4droute.nl`) en krijgt het jaartal achter de naam, en op het hoofddomein staat direct een verse editie klaar voor het volgende jaar: zelfde naam en beheerwachtwoord, start/finish en tempo-instellingen gaan mee; routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het archief zelf verandert verder niets — het blijft te bekijken via "Eerdere edities" (`a4droute.nl/edities`).
 
 ## Lokaal draaien
 
@@ -84,11 +85,11 @@ npm start              # http://localhost:3000
    `postgresql://...@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`.
 3. Meer hoef je niet te doen: de app maakt de `day_routes`-tabel zelf aan bij het opstarten.
 
-## Eigen domein met subdomeinen per event
+## Eigen domein
 
-Elk event leeft op een eigen subdomein: `syncope.a4droute.nl`. Zo zet je dat op:
+De lopende editie staat op het hoofddomein (`a4droute.nl`), afgelopen edities op een subdomein met hun jaartal (`2026.a4droute.nl`). Zo zet je dat op:
 
-1. Koop een domein (bv. `a4droute.nl`) en voeg het in Render toe onder **Settings → Custom Domains**: zowel `a4droute.nl` als `*.a4droute.nl` (wildcard).
+1. Koop een domein (bv. `a4droute.nl`) en voeg het in Render toe onder **Settings → Custom Domains**: zowel `a4droute.nl` als `*.a4droute.nl` (wildcard — voor de jaararchieven).
 2. Zet bij je registrar de DNS-records die Render toont (A-record voor het hoofddomein, CNAME/wildcard voor `*`).
 3. Zet de omgevingsvariabele `BASE_DOMAIN=a4droute.nl` in Render.
 4. Voeg in de Google Cloud Console `https://a4droute.nl/*` en `https://*.a4droute.nl/*` toe aan de referrer-restrictie van je key (anders valt Street View stil).

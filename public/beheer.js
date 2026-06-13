@@ -72,7 +72,7 @@ async function archiveEvent(ev) {
     return;
   }
   const zeker = confirm(
-    `"${ev.name}" archiveren? Het jaartal komt achter de naam en het webadres, en op ${eventLink(ev.slug)} start een verse editie voor volgend jaar.`
+    `"${ev.name}" archiveren? De editie verhuist naar een webadres met het jaartal en op het hoofddomein start een verse editie voor volgend jaar.`
   );
   if (!zeker) return;
   status.textContent = 'Archiveren…';
