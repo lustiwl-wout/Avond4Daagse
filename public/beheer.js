@@ -2,11 +2,16 @@
 // wijzigen of een afgelopen editie archiveren — alles met het
 // master-wachtwoord.
 
-// Elke editie leeft op een eigen subdomein; het basisdomein komt van de server.
+// Het basisdomein komt van de server.
 let baseDomain = location.hostname;
 
 function eventLink(slug, page = '') {
   return `${location.protocol}//${slug}.${baseDomain}${page}`;
+}
+
+// De lopende editie staat op het hoofddomein; archieven op hun jaar-subdomein.
+function editionUrl(ev, page = '') {
+  return ev.archived ? eventLink(ev.slug, page) : `${location.protocol}//${baseDomain}${page}`;
 }
 
 async function loadEvents() {
@@ -33,7 +38,7 @@ async function loadEvents() {
       }
       li.appendChild(name);
       const links = document.createElement('span');
-      links.innerHTML = `<a href="${eventLink(ev.slug)}">bekijken</a> · <a href="${eventLink(ev.slug, '/admin')}">beheer</a> · `;
+      links.innerHTML = `<a href="${editionUrl(ev)}">bekijken</a> · <a href="${editionUrl(ev, '/admin')}">beheer</a> · `;
       const pwdLink = document.createElement('a');
       pwdLink.href = '#';
       pwdLink.textContent = 'wachtwoord';

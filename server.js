@@ -10,11 +10,11 @@ const port = process.env.PORT || 3000;
 // de rate limiting op wachtwoordpogingen).
 app.set('trust proxy', 1);
 
-// Eén installatie host meerdere avondvierdaagsen ("events"): elke
-// organisatie heeft een eigen subdomein (syncope.a4droute.nl, …) met
-// eigen routes, teams, instellingen en beheerwachtwoord.
-// Het master-wachtwoord (omgevingsvariabele ADMIN_PASSWORD) werkt op
-// elk event — handig voor de platformbeheerder.
+// De avondvierdaagse van Syncope. Elke jaargang is een "event" in de
+// database: de lopende editie staat op het hoofddomein (a4droute.nl) en
+// afgelopen edities op een subdomein met hun jaartal (2026.a4droute.nl),
+// elk met eigen routes, teams en instellingen. Het master-wachtwoord
+// (omgevingsvariabele ADMIN_PASSWORD) werkt op elke editie en op /beheer.
 
 app.use(express.json());
 
@@ -1581,10 +1581,40 @@ function sendPage(res, file) {
   });
 }
 
+// Hoort dit subdomein bij de lopende (niet-gearchiveerde) editie? Die hoort
+// op het hoofddomein thuis.
+async function isLiveSubdomain(slug) {
+  if (!pool) return false;
+  try {
+    const { rows } = await pool.query(
+      'SELECT 1 FROM events WHERE slug = $1 AND archived_at IS NULL',
+      [slug]
+    );
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Stuur de lopende editie van haar slug-subdomein (syncope.a4droute.nl)
+// blijvend door naar het hoofddomein (a4droute.nl), met behoud van pad en
+// query — zo raken bezoekers eraan gewend dat het subdomein niet meer nodig
+// is. Archief-subdomeinen (2026.a4droute.nl) blijven gewoon staan. Geeft
+// true als er is doorgestuurd.
+async function redirectLiveSubdomain(req, res) {
+  const hostSlug = slugFromHost(req);
+  if (hostSlug && (await isLiveSubdomain(hostSlug))) {
+    res.redirect(301, `${req.protocol}://${BASE_DOMAIN}${req.originalUrl}`);
+    return true;
+  }
+  return false;
+}
+
 // Op een subdomein de pagina van dát event; op het hoofddomein de lopende
 // editie (de frontend gebruikt daar de '_live'-slug). `fallback` is wat het
 // hoofddomein toont als er (nog) geen lopende editie is.
 async function serveEventPage(req, res, file, fallback) {
+  if (await redirectLiveSubdomain(req, res)) return;
   const hostSlug = slugFromHost(req);
   if (hostSlug) return (await eventExists(hostSlug)) ? sendPage(res, file) : fallback(res);
   return (await liveEventExists()) ? sendPage(res, file) : fallback(res);
@@ -1605,9 +1635,16 @@ for (const [route, file] of [
 }
 
 // Editie-overzicht (huidige editie + eerdere jaren) en het master-beheer
-// (archiveren, wachtwoorden). Beide horen bij het hoofddomein.
-app.get('/edities', (req, res) => sendPage(res, 'landing.html'));
-app.get('/beheer', (req, res) => sendPage(res, 'beheer.html'));
+// (archiveren, wachtwoorden). Beide horen bij het hoofddomein; vanaf het
+// slug-subdomein van de lopende editie sturen we ook hier door.
+app.get('/edities', async (req, res) => {
+  if (await redirectLiveSubdomain(req, res)) return;
+  sendPage(res, 'landing.html');
+});
+app.get('/beheer', async (req, res) => {
+  if (await redirectLiveSubdomain(req, res)) return;
+  sendPage(res, 'beheer.html');
+});
 
 
 // Direct luisteren — Render zet een deploy pas live zodra de poort open is,

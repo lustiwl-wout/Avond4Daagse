@@ -87,7 +87,7 @@ npm start              # http://localhost:3000
 
 ## Eigen domein
 
-De lopende editie staat op het hoofddomein (`a4droute.nl`), afgelopen edities op een subdomein met hun jaartal (`2026.a4droute.nl`). Zo zet je dat op:
+De lopende editie staat op het hoofddomein (`a4droute.nl`), afgelopen edities op een subdomein met hun jaartal (`2026.a4droute.nl`). Het oude subdomein van de lopende jaargang (bijv. `syncope.a4droute.nl`) stuurt automatisch (301) door naar het hoofddomein. Zo zet je het domein op:
 
 1. Koop een domein (bv. `a4droute.nl`) en voeg het in Render toe onder **Settings → Custom Domains**: zowel `a4droute.nl` als `*.a4droute.nl` (wildcard — voor de jaararchieven).
 2. Zet bij je registrar de DNS-records die Render toont (A-record voor het hoofddomein, CNAME/wildcard voor `*`).
