@@ -322,8 +322,21 @@ async function migrateFromOldDatabase(oldUrl) {
     const TABLES = ['events', 'day_routes', 'settings', 'teams', 'route_drafts'];
     for (const table of TABLES) {
       const { rows } = await oldPool.query(`SELECT * FROM ${table}`);
+      // Alleen kolommen die de nieuwe database ook kent: een oude database
+      // sleept soms kolommen mee uit eerdere versies van de app (bv.
+      // teams.mode) die initDb() allang niet meer aanmaakt.
+      const { rows: destCols } = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1`,
+        [table]
+      );
+      const known = new Set(destCols.map((r) => r.column_name));
+      const skipped = Object.keys(rows[0] || {}).filter((c) => !known.has(c));
+      if (skipped.length > 0) {
+        console.log(`  ${table}: verlaten kolom(men) ${skipped.join(', ')} overgeslagen.`);
+      }
       for (const row of rows) {
-        const cols = Object.keys(row);
+        const cols = Object.keys(row).filter((c) => known.has(c));
         const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
         // pg geeft JSONB-kolommen bij het lezen als kant-en-klaar object
         // terug, maar verwacht bij het schrijven zelf weer een JSON-string
