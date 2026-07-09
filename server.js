@@ -288,6 +288,73 @@ async function migrateToEvents() {
   }
 }
 
+// --- Eenmalige migratie vanaf een oude database (bv. bij het overzetten
+// naar een andere Neon-regio) ---
+// Actief zodra de omgevingsvariabele MIGRATE_FROM_URL is gezet: kopieert dan
+// alle rijen van die (oude) database naar de huidige (`pool`). Draait als
+// onderdeel van het opstarten, dus op Render volstaat het om DATABASE_URL op
+// de nieuwe database te zetten, MIGRATE_FROM_URL op de oude, en te
+// (her)deployen. Uitsluitend actief als de huidige database nog leeg is —
+// dus veilig om de variabele per ongeluk te laten staan na een volgende
+// deploy; die vindt dan gewoon al data en slaat zichzelf over.
+async function migrateFromOldDatabase(oldUrl) {
+  const { rows: existing } = await pool.query('SELECT 1 FROM events LIMIT 1');
+  if (existing.length > 0) {
+    console.log('MIGRATE_FROM_URL is gezet, maar deze database heeft al data — migratie overgeslagen.');
+    return;
+  }
+
+  let connectionString = oldUrl;
+  try {
+    const u = new URL(connectionString);
+    u.searchParams.delete('sslmode');
+    u.searchParams.delete('channel_binding');
+    connectionString = u.toString();
+  } catch {
+    // geen standaard-URL: laten zoals hij is
+  }
+  const oldPool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+
+  const client = await pool.connect();
+  try {
+    console.log('Migratie vanaf oude database gestart…');
+    await client.query('BEGIN');
+    const TABLES = ['events', 'day_routes', 'settings', 'teams', 'route_drafts'];
+    for (const table of TABLES) {
+      const { rows } = await oldPool.query(`SELECT * FROM ${table}`);
+      for (const row of rows) {
+        const cols = Object.keys(row);
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+        // pg geeft JSONB-kolommen bij het lezen als kant-en-klaar object
+        // terug, maar verwacht bij het schrijven zelf weer een JSON-string
+        // (net als overal elders in dit bestand); TIMESTAMPTZ-kolommen komen
+        // als Date-object binnen en die accepteert pg wél rechtstreeks.
+        const values = cols.map((c) => {
+          const v = row[c];
+          return v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v;
+        });
+        await client.query(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`, values);
+      }
+      console.log(`  ${table}: ${rows.length} rijen gekopieerd.`);
+    }
+    // SERIAL-kolommen: na het expliciet invullen van id's loopt de sequence
+    // niet vanzelf mee, dus die zetten we bij tot voorbij het hoogste id.
+    for (const table of ['events', 'teams', 'route_drafts']) {
+      await client.query(
+        `SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 1))`
+      );
+    }
+    await client.query('COMMIT');
+    console.log('Migratie vanaf oude database klaar.');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+    await oldPool.end();
+  }
+}
+
 // --- Hulpfuncties ---
 
 function requireDb(res) {
@@ -1656,5 +1723,15 @@ dbInit = initDb()
     console.log('Database klaar.');
   })
   .catch((err) => console.error('Database-initialisatie mislukt:', err));
+
+// MIGRATE_FROM_URL: zie migrateFromOldDatabase() hierboven. Los van dbInit
+// gehouden zodat een migratiefout de normale werking niet blokkeert.
+if (process.env.MIGRATE_FROM_URL) {
+  dbInit.then(() =>
+    migrateFromOldDatabase(process.env.MIGRATE_FROM_URL).catch((err) =>
+      console.error('Migratie vanaf oude database mislukt:', err)
+    )
+  );
+}
 
 app.listen(port, () => console.log(`Avond4Daagse routeplanner draait op poort ${port}`));
