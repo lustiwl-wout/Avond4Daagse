@@ -601,26 +601,50 @@ async function valhallaFootRoute(points) {
 
 // OpenRouteService: optioneel, met eigen (gratis) API-key — onafhankelijk
 // van de publieke OSM-servers en daarmee de betrouwbaarste optie.
+// api.openrouteservice.org is sinds april 2026 uitgefaseerd (en wordt
+// actief afgeknepen) ten gunste van api.heigit.org; het nieuwe adres gaat
+// voorop, het oude blijft als reserve.
+const ORS_ENDPOINTS = [
+  'https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson',
+  'https://api.openrouteservice.org/v2/directions/foot-walking/geojson',
+];
+
 async function orsFootRoute(points) {
-  const resp = await fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: process.env.ORS_API_KEY,
-      'User-Agent': OSM_UA,
-    },
-    body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (resp.status === 404) return null; // geen route mogelijk
-  if (!resp.ok) throw new Error(`OpenRouteService gaf status ${resp.status}`);
-  const data = await resp.json();
-  const feature = data.features && data.features[0];
-  if (!feature) return null;
-  return {
-    path: feature.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-    distance_m: Math.round(feature.properties.summary.distance),
-  };
+  let lastErr = null;
+  for (const endpoint of ORS_ENDPOINTS) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: process.env.ORS_API_KEY,
+          'User-Agent': OSM_UA,
+        },
+        body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (resp.status === 404) {
+        // ORS meldt "geen route mogelijk" als 404 mét een JSON-foutobject;
+        // een kale 404 betekent dat het endpoint zelf niet (meer) klopt en
+        // dan is het volgende adres (of OSRM/Valhalla) aan de beurt.
+        const body = await resp.json().catch(() => null);
+        if (body && body.error) return null; // geen route mogelijk
+        throw new Error('endpoint niet gevonden (404)');
+      }
+      if (!resp.ok) throw new Error(`status ${resp.status}`);
+      const data = await resp.json();
+      const feature = data.features && data.features[0];
+      if (!feature) return null;
+      return {
+        path: feature.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+        distance_m: Math.round(feature.properties.summary.distance),
+      };
+    } catch (err) {
+      console.error(`OpenRouteService via ${new URL(endpoint).host} faalde:`, err.message);
+      lastErr = err;
+    }
+  }
+  throw new Error(`OpenRouteService onbereikbaar (${lastErr ? lastErr.message : 'onbekend'})`);
 }
 
 function footRouteBackends() {
