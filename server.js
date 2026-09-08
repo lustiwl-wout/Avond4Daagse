@@ -621,7 +621,9 @@ async function orsFootRoute(points) {
           'User-Agent': OSM_UA,
         },
         body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
-        signal: AbortSignal.timeout(15000),
+        // Korter dan bij de andere diensten: ORS heeft twee adressen om te
+        // proberen en bleek soms te hangen — dan niet te lang blijven wachten.
+        signal: AbortSignal.timeout(8000),
       });
       if (resp.status === 404) {
         // ORS meldt "geen route mogelijk" als 404 mét een JSON-foutobject;
@@ -652,6 +654,53 @@ function footRouteBackends() {
   if (process.env.ORS_API_KEY) backends.push(['OpenRouteService', orsFootRoute]);
   backends.push(['OSRM', osrmFootRoute], ['Valhalla', valhallaFootRoute]);
   return backends;
+}
+
+// Gespreide race langs de routediensten: de eerste start meteen; antwoordt
+// die niet binnen ROUTE_STAGGER_MS (of faalt hij), dan doet de volgende
+// alvast mee en wint het eerste antwoord. Zo bepaalt één hangende dienst
+// (ORS had daar last van) niet langer het tempo, terwijl de reservediensten
+// met rust gelaten worden zolang de voorkeursdienst gewoon snel antwoordt.
+const ROUTE_STAGGER_MS = 2500;
+
+function computeFootRoute(points, backends) {
+  return new Promise((resolve, reject) => {
+    let next = 0;
+    let running = 0;
+    let done = false;
+    let lastErr = null;
+    let timer = null;
+
+    function startNext() {
+      if (done || next >= backends.length) return;
+      const [name, backend] = backends[next++];
+      running++;
+      backend(points)
+        .then((route) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve({ route, source: name });
+        })
+        .catch((err) => {
+          running--;
+          if (done) return;
+          console.error(`Routeservice ${name} faalde:`, err.message);
+          lastErr = err;
+          startNext();
+          if (running === 0 && next >= backends.length) {
+            done = true;
+            clearTimeout(timer);
+            reject(lastErr);
+          }
+        });
+      // Loopt deze na de wachttijd nog, dan mag de volgende alvast meedoen.
+      clearTimeout(timer);
+      if (next < backends.length) timer = setTimeout(startNext, ROUTE_STAGGER_MS);
+    }
+
+    startNext();
+  });
 }
 
 const geoCache = new Map();
@@ -1118,9 +1167,9 @@ eventApi.put('/admin/pause/:day', async (req, res) => {
   }
 });
 
-// Wandelroute berekenen; probeert de routediensten één voor één tot er
-// eentje antwoordt. 422 = er bestaat echt geen wandelroute via deze punten;
-// 502 = geen van de diensten was bereikbaar.
+// Wandelroute berekenen; de routediensten doen gespreid mee en het eerste
+// antwoord wint (zie computeFootRoute). 422 = er bestaat echt geen
+// wandelroute via deze punten; 502 = geen van de diensten was bereikbaar.
 eventApi.post('/admin/route', async (req, res) => {
   if (!(await requireAdmin(req, res))) return;
   const { profile, points } = req.body || {};
@@ -1128,21 +1177,18 @@ eventApi.post('/admin/route', async (req, res) => {
   if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
     return res.status(400).json({ error: 'Ongeldige routepunten.' });
   }
-  for (const [name, backend] of footRouteBackends()) {
-    try {
-      const route = await backend(points);
-      if (route === null) {
-        return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
-      }
-      console.log(`Wandelroute berekend via ${name} (${route.distance_m} m).`);
-      return res.json({ ...route, source: name });
-    } catch (err) {
-      console.error(`Routeservice ${name} faalde:`, err.message);
+  try {
+    const { route, source } = await computeFootRoute(points, footRouteBackends());
+    if (route === null) {
+      return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
     }
+    console.log(`Wandelroute berekend via ${source} (${route.distance_m} m).`);
+    res.json({ ...route, source });
+  } catch {
+    res.status(502).json({
+      error: 'Geen van de routediensten is bereikbaar — probeer het over een paar minuten opnieuw.',
+    });
   }
-  res.status(502).json({
-    error: 'Geen van de routediensten is bereikbaar — probeer het over een paar minuten opnieuw.',
-  });
 });
 
 // Publiek: alle dagroutes.
