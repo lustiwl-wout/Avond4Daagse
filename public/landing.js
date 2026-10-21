@@ -1,5 +1,5 @@
-// Landingspagina: lijst van avondvierdaagsen. Nieuwe aanmaken kan alleen
-// via /beheer (platformbeheerder).
+// Startpagina: de huidige editie bovenaan, eerdere jaren onder "Eerdere
+// edities". Beheer (wachtwoord wijzigen, archiveren) gaat via /admin.
 async function loadEvents() {
   const list = document.getElementById('event-list');
   try {
@@ -7,19 +7,32 @@ async function loadEvents() {
     if (!res.ok) throw new Error();
     const { baseDomain, events } = await res.json();
     list.innerHTML = '';
-    if (events.length === 0) {
-      list.innerHTML = '<li class="hint">Er zijn nog geen avondvierdaagsen gepubliceerd.</li>';
-      return;
-    }
-    // Elk event leeft op zijn eigen subdomein.
+    // Elk event leeft op zijn eigen subdomein; afgelopen edities staan
+    // apart onder "Eerdere edities".
     const base = baseDomain || location.hostname;
-    for (const ev of events) {
+    const render = (ev) => {
       const li = document.createElement('li');
       const a = document.createElement('a');
-      a.href = `${location.protocol}//${ev.slug}.${base}`;
+      // Lopende editie staat op het hoofddomein; archieven op hun jaar-subdomein.
+      a.href = ev.archived
+        ? `${location.protocol}//${ev.slug}.${base}`
+        : `${location.protocol}//${base}`;
       a.textContent = ev.name;
       li.appendChild(a);
-      list.appendChild(li);
+      return li;
+    };
+    const current = events.filter((ev) => !ev.archived);
+    if (current.length === 0) {
+      list.innerHTML = '<li class="hint">De editie van dit jaar staat nog niet klaar.</li>';
+    } else {
+      for (const ev of current) list.appendChild(render(ev));
+    }
+    const archived = events.filter((ev) => ev.archived);
+    if (archived.length > 0) {
+      const archiveList = document.getElementById('archive-list');
+      archiveList.innerHTML = '';
+      for (const ev of archived) archiveList.appendChild(render(ev));
+      document.getElementById('archive-card').hidden = false;
     }
   } catch {
     list.innerHTML = '<li class="hint">Let op: lijst laden mislukt.</li>';

@@ -145,6 +145,7 @@ async function init() {
   const config = await res.json();
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
+  if (config.orgName) document.title = 'Beheer — ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   schedule = config.schedule || null;
@@ -1436,12 +1437,29 @@ function renderTeams() {
 // --- Mededeling voor bezoekers en verkeersregelaars ---
 let announcementText = '';
 
-function initAnnouncement() {
-  document.getElementById('announce-text').value = announcementText || '';
+// Staat de huidige mededeling onveranderd (of leeg) in het veld, dan is de
+// knop "Mededeling verwijderen"; bij nieuwe of aangepaste tekst "tonen".
+function announceRemoves() {
+  const text = document.getElementById('announce-text').value.trim();
+  return !!announcementText && (text === '' || text === announcementText);
 }
 
+function updateAnnounceButton() {
+  document.getElementById('announce-save').textContent = announceRemoves()
+    ? 'Mededeling verwijderen'
+    : 'Mededeling tonen';
+}
+
+function initAnnouncement() {
+  document.getElementById('announce-text').value = announcementText || '';
+  updateAnnounceButton();
+}
+
+document.getElementById('announce-text').addEventListener('input', updateAnnounceButton);
+
 document.getElementById('announce-save').addEventListener('click', async () => {
-  const text = document.getElementById('announce-text').value.trim();
+  const field = document.getElementById('announce-text');
+  const text = announceRemoves() ? '' : field.value.trim();
   const res = await fetch(api('/admin/announcement'), {
     method: 'PUT',
     headers: adminHeaders(true),
@@ -1449,7 +1467,9 @@ document.getElementById('announce-save').addEventListener('click', async () => {
   });
   if (res.ok) {
     announcementText = text;
+    field.value = text;
     setSaveStatus(text ? 'Mededeling staat op de site.' : 'Mededeling weggehaald.');
+    updateAnnounceButton();
   } else {
     const err = await res.json().catch(() => ({}));
     setSaveStatus('Let op: ' + (err.error || 'mededeling opslaan mislukt.'));

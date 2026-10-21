@@ -24,6 +24,7 @@ async function init() {
   document.getElementById('back-link').href = eventUrl('');
   const brandSub = document.getElementById('brand-sub');
   if (brandSub && config.orgName) brandSub.textContent = 'Avond4Daagse · ' + config.orgName;
+  if (config.orgName) document.title = 'Verkeersregelaars — ' + config.orgName;
   setStreetViewKey(config.googleMapsApiKey || '');
   startFinish = config.startFinish;
   eventSchedule = config.schedule || null;

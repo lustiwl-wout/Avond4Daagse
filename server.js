@@ -10,11 +10,11 @@ const port = process.env.PORT || 3000;
 // de rate limiting op wachtwoordpogingen).
 app.set('trust proxy', 1);
 
-// Eén installatie host meerdere avondvierdaagsen ("events"): elke
-// organisatie heeft een eigen subdomein (syncope.a4droute.nl, …) met
-// eigen routes, teams, instellingen en beheerwachtwoord.
-// Het master-wachtwoord (omgevingsvariabele ADMIN_PASSWORD) werkt op
-// elk event — handig voor de platformbeheerder.
+// De avondvierdaagse van Syncope. Elke jaargang is een "event" in de
+// database: de lopende editie staat op het hoofddomein (a4droute.nl) en
+// afgelopen edities op een subdomein met hun jaartal (2026.a4droute.nl),
+// elk met eigen routes, teams en instellingen. Het master-wachtwoord
+// (omgevingsvariabele ADMIN_PASSWORD) werkt op elke editie en op /beheer.
 
 app.use(express.json());
 
@@ -121,7 +121,7 @@ function checkMaster(given) {
   );
 }
 
-const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'simulate', 'favicon.ico', '']);
+const RESERVED_SLUGS = new Set(['api', 'admin', 'verkeer', 'print', 'beheer', 'edities', 'simulate', 'favicon.ico', '']);
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 let pool = null;
@@ -158,9 +158,12 @@ async function initDb() {
       slug TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       password_hash TEXT NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      archived_at TIMESTAMPTZ
     )
   `);
+  // Bestaande installaties: kolom voor het automatische archief erbij.
+  await pool.query('ALTER TABLE events ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ');
   await pool.query(`
     CREATE TABLE IF NOT EXISTS day_routes (
       event_id INTEGER NOT NULL,
@@ -285,6 +288,86 @@ async function migrateToEvents() {
   }
 }
 
+// --- Eenmalige migratie vanaf een oude database (bv. bij het overzetten
+// naar een andere Neon-regio) ---
+// Actief zodra de omgevingsvariabele MIGRATE_FROM_URL is gezet: kopieert dan
+// alle rijen van die (oude) database naar de huidige (`pool`). Draait als
+// onderdeel van het opstarten, dus op Render volstaat het om DATABASE_URL op
+// de nieuwe database te zetten, MIGRATE_FROM_URL op de oude, en te
+// (her)deployen. Uitsluitend actief als de huidige database nog leeg is —
+// dus veilig om de variabele per ongeluk te laten staan na een volgende
+// deploy; die vindt dan gewoon al data en slaat zichzelf over.
+async function migrateFromOldDatabase(oldUrl) {
+  const { rows: existing } = await pool.query('SELECT 1 FROM events LIMIT 1');
+  if (existing.length > 0) {
+    console.log('MIGRATE_FROM_URL is gezet, maar deze database heeft al data — migratie overgeslagen.');
+    return;
+  }
+
+  let connectionString = oldUrl;
+  try {
+    const u = new URL(connectionString);
+    u.searchParams.delete('sslmode');
+    u.searchParams.delete('channel_binding');
+    connectionString = u.toString();
+  } catch {
+    // geen standaard-URL: laten zoals hij is
+  }
+  const oldPool = new Pool({ connectionString, ssl: { rejectUnauthorized: false } });
+
+  const client = await pool.connect();
+  try {
+    console.log('Migratie vanaf oude database gestart…');
+    await client.query('BEGIN');
+    const TABLES = ['events', 'day_routes', 'settings', 'teams', 'route_drafts'];
+    for (const table of TABLES) {
+      const { rows } = await oldPool.query(`SELECT * FROM ${table}`);
+      // Alleen kolommen die de nieuwe database ook kent: een oude database
+      // sleept soms kolommen mee uit eerdere versies van de app (bv.
+      // teams.mode) die initDb() allang niet meer aanmaakt.
+      const { rows: destCols } = await client.query(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = $1`,
+        [table]
+      );
+      const known = new Set(destCols.map((r) => r.column_name));
+      const skipped = Object.keys(rows[0] || {}).filter((c) => !known.has(c));
+      if (skipped.length > 0) {
+        console.log(`  ${table}: verlaten kolom(men) ${skipped.join(', ')} overgeslagen.`);
+      }
+      for (const row of rows) {
+        const cols = Object.keys(row).filter((c) => known.has(c));
+        const placeholders = cols.map((_, i) => `$${i + 1}`).join(', ');
+        // pg geeft JSONB-kolommen bij het lezen als kant-en-klaar object
+        // terug, maar verwacht bij het schrijven zelf weer een JSON-string
+        // (net als overal elders in dit bestand); TIMESTAMPTZ-kolommen komen
+        // als Date-object binnen en die accepteert pg wél rechtstreeks.
+        const values = cols.map((c) => {
+          const v = row[c];
+          return v !== null && typeof v === 'object' && !(v instanceof Date) ? JSON.stringify(v) : v;
+        });
+        await client.query(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})`, values);
+      }
+      console.log(`  ${table}: ${rows.length} rijen gekopieerd.`);
+    }
+    // SERIAL-kolommen: na het expliciet invullen van id's loopt de sequence
+    // niet vanzelf mee, dus die zetten we bij tot voorbij het hoogste id.
+    for (const table of ['events', 'teams', 'route_drafts']) {
+      await client.query(
+        `SELECT setval(pg_get_serial_sequence('${table}', 'id'), COALESCE((SELECT MAX(id) FROM ${table}), 1))`
+      );
+    }
+    await client.query('COMMIT');
+    console.log('Migratie vanaf oude database klaar.');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+    await oldPool.end();
+  }
+}
+
 // --- Hulpfuncties ---
 
 function requireDb(res) {
@@ -372,6 +455,73 @@ function computeDefaultDay(eventSetting) {
   return upcoming ? upcoming.day : entries[entries.length - 1].day;
 }
 
+// --- Archief ---
+// De lopende editie staat op het hoofddomein (a4droute.nl). De beheerder
+// archiveert een afgelopen editie zelf met de archiveerknop in het beheer:
+// die verhuist de editie naar een webadres met het jaartal (2026 →
+// 2026.a4droute.nl), zet het jaartal achter de naam en zet op het
+// hoofddomein een verse editie klaar voor het volgende jaar — zelfde naam
+// en beheerwachtwoord, start/finish en tempo-instellingen gaan mee;
+// routes, oversteekpunten, teams en loopdagen beginnen leeg. Aan het
+// archief verandert verder niets: het blijft te bekijken en te beheren op
+// zijn jaar-webadres.
+
+// Eerste vrije archief-webadres: het jaartal (2026), anders 2026-2, …
+async function freeArchiveSlug(client, year) {
+  for (let i = 1; i <= 9; i++) {
+    const slug = i === 1 ? year : `${year}-${i}`;
+    const { rows } = await client.query('SELECT 1 FROM events WHERE slug = $1', [slug]);
+    if (rows.length === 0) return slug;
+  }
+  throw new Error(`geen vrij archief-webadres voor jaar ${year}`);
+}
+
+// Archiveert één event en zet de verse editie klaar. Geeft het
+// archief-webadres terug, of null als het event al gearchiveerd was.
+async function archiveEvent(eventId, year) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Rijslot + hercontrole: twee serverinstanties (bv. tijdens een
+    // deploy) mogen hetzelfde event niet allebei archiveren.
+    const { rows } = await client.query(
+      'SELECT slug, name, password_hash FROM events WHERE id = $1 AND archived_at IS NULL FOR UPDATE',
+      [eventId]
+    );
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    const { slug, name, password_hash } = rows[0];
+    const archiveSlug = await freeArchiveSlug(client, year);
+    const archiveName = name.endsWith(year) ? name : `${name} ${year}`;
+    await client.query('UPDATE events SET slug = $1, name = $2, archived_at = now() WHERE id = $3', [
+      archiveSlug,
+      archiveName,
+      eventId,
+    ]);
+    const { rows: fresh } = await client.query(
+      'INSERT INTO events (slug, name, password_hash) VALUES ($1, $2, $3) RETURNING id',
+      [slug, name, password_hash]
+    );
+    await client.query(
+      `INSERT INTO settings (event_id, key, value)
+       SELECT $1, key, value FROM settings WHERE event_id = $2 AND key IN ('start_finish', 'vr_settings')`,
+      [fresh[0].id, eventId]
+    );
+    await client.query('COMMIT');
+    console.log(
+      `Avondvierdaagse "${slug}" gearchiveerd als "${archiveSlug}"; nieuwe editie klaargezet op "${slug}".`
+    );
+    return archiveSlug;
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // --- OpenStreetMap-diensten: routes (OSRM) en adressen (Nominatim) ---
 
 const OSM_UA = 'Avond4Daagse-routeplanner/1.0 (https://github.com/lustiwl-wout/Avond4Daagse)';
@@ -451,26 +601,52 @@ async function valhallaFootRoute(points) {
 
 // OpenRouteService: optioneel, met eigen (gratis) API-key — onafhankelijk
 // van de publieke OSM-servers en daarmee de betrouwbaarste optie.
+// api.openrouteservice.org is sinds april 2026 uitgefaseerd (en wordt
+// actief afgeknepen) ten gunste van api.heigit.org; het nieuwe adres gaat
+// voorop, het oude blijft als reserve.
+const ORS_ENDPOINTS = [
+  'https://api.heigit.org/openrouteservice/v2/directions/foot-walking/geojson',
+  'https://api.openrouteservice.org/v2/directions/foot-walking/geojson',
+];
+
 async function orsFootRoute(points) {
-  const resp = await fetch('https://api.openrouteservice.org/v2/directions/foot-walking/geojson', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: process.env.ORS_API_KEY,
-      'User-Agent': OSM_UA,
-    },
-    body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (resp.status === 404) return null; // geen route mogelijk
-  if (!resp.ok) throw new Error(`OpenRouteService gaf status ${resp.status}`);
-  const data = await resp.json();
-  const feature = data.features && data.features[0];
-  if (!feature) return null;
-  return {
-    path: feature.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
-    distance_m: Math.round(feature.properties.summary.distance),
-  };
+  let lastErr = null;
+  for (const endpoint of ORS_ENDPOINTS) {
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: process.env.ORS_API_KEY,
+          'User-Agent': OSM_UA,
+        },
+        body: JSON.stringify({ coordinates: points.map((p) => [p.lng, p.lat]) }),
+        // Korter dan bij de andere diensten: ORS heeft twee adressen om te
+        // proberen en bleek soms te hangen — dan niet te lang blijven wachten.
+        signal: AbortSignal.timeout(8000),
+      });
+      if (resp.status === 404) {
+        // ORS meldt "geen route mogelijk" als 404 mét een JSON-foutobject;
+        // een kale 404 betekent dat het endpoint zelf niet (meer) klopt en
+        // dan is het volgende adres (of OSRM/Valhalla) aan de beurt.
+        const body = await resp.json().catch(() => null);
+        if (body && body.error) return null; // geen route mogelijk
+        throw new Error('endpoint niet gevonden (404)');
+      }
+      if (!resp.ok) throw new Error(`status ${resp.status}`);
+      const data = await resp.json();
+      const feature = data.features && data.features[0];
+      if (!feature) return null;
+      return {
+        path: feature.geometry.coordinates.map(([lng, lat]) => ({ lat, lng })),
+        distance_m: Math.round(feature.properties.summary.distance),
+      };
+    } catch (err) {
+      console.error(`OpenRouteService via ${new URL(endpoint).host} faalde:`, err.message);
+      lastErr = err;
+    }
+  }
+  throw new Error(`OpenRouteService onbereikbaar (${lastErr ? lastErr.message : 'onbekend'})`);
 }
 
 function footRouteBackends() {
@@ -478,6 +654,53 @@ function footRouteBackends() {
   if (process.env.ORS_API_KEY) backends.push(['OpenRouteService', orsFootRoute]);
   backends.push(['OSRM', osrmFootRoute], ['Valhalla', valhallaFootRoute]);
   return backends;
+}
+
+// Gespreide race langs de routediensten: de eerste start meteen; antwoordt
+// die niet binnen ROUTE_STAGGER_MS (of faalt hij), dan doet de volgende
+// alvast mee en wint het eerste antwoord. Zo bepaalt één hangende dienst
+// (ORS had daar last van) niet langer het tempo, terwijl de reservediensten
+// met rust gelaten worden zolang de voorkeursdienst gewoon snel antwoordt.
+const ROUTE_STAGGER_MS = 2500;
+
+function computeFootRoute(points, backends) {
+  return new Promise((resolve, reject) => {
+    let next = 0;
+    let running = 0;
+    let done = false;
+    let lastErr = null;
+    let timer = null;
+
+    function startNext() {
+      if (done || next >= backends.length) return;
+      const [name, backend] = backends[next++];
+      running++;
+      backend(points)
+        .then((route) => {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          resolve({ route, source: name });
+        })
+        .catch((err) => {
+          running--;
+          if (done) return;
+          console.error(`Routeservice ${name} faalde:`, err.message);
+          lastErr = err;
+          startNext();
+          if (running === 0 && next >= backends.length) {
+            done = true;
+            clearTimeout(timer);
+            reject(lastErr);
+          }
+        });
+      // Loopt deze na de wachttijd nog, dan mag de volgende alvast meedoen.
+      clearTimeout(timer);
+      if (next < backends.length) timer = setTimeout(startNext, ROUTE_STAGGER_MS);
+    }
+
+    startNext();
+  });
 }
 
 const geoCache = new Map();
@@ -626,7 +849,11 @@ app.get('/api/version', (req, res) => {
 app.get('/api/events', async (req, res) => {
   if (!requireDb(res)) return;
   try {
-    const { rows } = await pool.query('SELECT slug, name FROM events ORDER BY name');
+    // Lopende edities eerst, archieven (afgelopen edities) daarachter.
+    const { rows } = await pool.query(
+      `SELECT slug, name, archived_at IS NOT NULL AS archived
+       FROM events ORDER BY archived_at IS NOT NULL, name`
+    );
     // baseDomain erbij: de frontend bouwt dan subdomein-links
     // (syncope.a4droute.nl) in plaats van pad-links (/syncope).
     res.json({ baseDomain: BASE_DOMAIN || null, events: rows });
@@ -677,6 +904,40 @@ app.post('/api/events', async (req, res) => {
   }
 });
 
+// Archiveren — alleen de platformbeheerder, via de knop in het
+// platformbeheer. Er gebeurt nooit iets vanzelf.
+app.post('/api/events/:slug/archive', async (req, res) => {
+  if (!requireDb(res)) return;
+  const blocked = authBlockedMinutes(req.ip);
+  if (blocked) return rejectTooManyAttempts(res, blocked);
+  if (!checkMaster(req.get('x-admin-password'))) {
+    recordAuthFailure(req.ip);
+    return res.status(401).json({ error: 'Alleen de platformbeheerder kan archiveren.' });
+  }
+  authFailures.delete(req.ip);
+  try {
+    const { rows } = await pool.query(
+      `SELECT e.id, e.archived_at, s.value AS event_setting
+       FROM events e
+       LEFT JOIN settings s ON s.event_id = e.id AND s.key = 'event'
+       WHERE e.slug = $1`,
+      [String(req.params.slug).toLowerCase()]
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Onbekende avondvierdaagse.' });
+    if (rows[0].archived_at) return res.status(409).json({ error: 'Dit is al een archief.' });
+    // Jaartal: van de laatste ingevulde loopdag, anders het huidige jaar.
+    const entries = scheduleEntries(rows[0].event_setting);
+    const year =
+      entries.length > 0 ? entries[entries.length - 1].date.slice(0, 4) : todayNl().slice(0, 4);
+    const archiveSlug = await archiveEvent(rows[0].id, year);
+    if (!archiveSlug) return res.status(409).json({ error: 'Dit is al een archief.' });
+    res.json({ archiveSlug });
+  } catch (err) {
+    console.error('Archiveren mislukt:', err);
+    res.status(500).json({ error: 'Archiveren mislukt.' });
+  }
+});
+
 // --- Event-API: alles onder /api/:slug/... ---
 
 const eventApi = express.Router({ mergeParams: true });
@@ -686,9 +947,14 @@ app.use(
   async (req, res, next) => {
     if (!requireDb(res)) return;
     try {
-      const { rows } = await pool.query('SELECT * FROM events WHERE slug = $1', [
-        String(req.params.slug).toLowerCase(),
-      ]);
+      const slug = String(req.params.slug).toLowerCase();
+      // '_live' = de lopende, niet-gearchiveerde editie. Het hoofddomein
+      // (a4droute.nl) heeft geen subdomein-slug en gebruikt dit, zodat de
+      // bezoekers- en beheerpagina's daar de actuele editie tonen.
+      const { rows } =
+        slug === '_live'
+          ? await pool.query('SELECT * FROM events WHERE archived_at IS NULL ORDER BY id LIMIT 1')
+          : await pool.query('SELECT * FROM events WHERE slug = $1', [slug]);
       if (rows.length === 0) return res.status(404).json({ error: 'Onbekende avondvierdaagse.' });
       req.event = rows[0];
       next();
@@ -901,9 +1167,9 @@ eventApi.put('/admin/pause/:day', async (req, res) => {
   }
 });
 
-// Wandelroute berekenen; probeert de routediensten één voor één tot er
-// eentje antwoordt. 422 = er bestaat echt geen wandelroute via deze punten;
-// 502 = geen van de diensten was bereikbaar.
+// Wandelroute berekenen; de routediensten doen gespreid mee en het eerste
+// antwoord wint (zie computeFootRoute). 422 = er bestaat echt geen
+// wandelroute via deze punten; 502 = geen van de diensten was bereikbaar.
 eventApi.post('/admin/route', async (req, res) => {
   if (!(await requireAdmin(req, res))) return;
   const { profile, points } = req.body || {};
@@ -911,21 +1177,18 @@ eventApi.post('/admin/route', async (req, res) => {
   if (!Array.isArray(points) || points.length < 2 || points.length > 60 || !points.every(isValidLatLng)) {
     return res.status(400).json({ error: 'Ongeldige routepunten.' });
   }
-  for (const [name, backend] of footRouteBackends()) {
-    try {
-      const route = await backend(points);
-      if (route === null) {
-        return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
-      }
-      console.log(`Wandelroute berekend via ${name} (${route.distance_m} m).`);
-      return res.json({ ...route, source: name });
-    } catch (err) {
-      console.error(`Routeservice ${name} faalde:`, err.message);
+  try {
+    const { route, source } = await computeFootRoute(points, footRouteBackends());
+    if (route === null) {
+      return res.status(422).json({ error: 'Geen wandelroute mogelijk via deze punten.' });
     }
+    console.log(`Wandelroute berekend via ${source} (${route.distance_m} m).`);
+    res.json({ ...route, source });
+  } catch {
+    res.status(502).json({
+      error: 'Geen van de routediensten is bereikbaar — probeer het over een paar minuten opnieuw.',
+    });
   }
-  res.status(502).json({
-    error: 'Geen van de routediensten is bereikbaar — probeer het over een paar minuten opnieuw.',
-  });
 });
 
 // Publiek: alle dagroutes.
@@ -1423,9 +1686,9 @@ eventApi.delete('/admin/teams/:id', async (req, res) => {
 });
 
 // --- Pagina's ---
-// Elk event leeft op zijn eigen subdomein (syncope.a4droute.nl, via
-// BASE_DOMAIN); het hoofddomein heeft alleen de landingspagina en het
-// platformbeheer.
+// De lopende editie staat op het hoofddomein (a4droute.nl); afgelopen
+// edities op een subdomein met hun jaartal (2026.a4droute.nl). Het
+// editie-overzicht staat op /edities, het master-beheer op /beheer.
 
 const BASE_DOMAIN = (process.env.BASE_DOMAIN || '').toLowerCase();
 
@@ -1450,39 +1713,88 @@ async function eventExists(slug) {
   }
 }
 
+// Is er een lopende (niet-gearchiveerde) editie? Zo ja, dan toont het
+// hoofddomein die; zo niet, dan valt het terug op het editie-overzicht.
+async function liveEventExists() {
+  if (!pool) return true;
+  try {
+    const { rows } = await pool.query('SELECT 1 FROM events WHERE archived_at IS NULL LIMIT 1');
+    return rows.length > 0;
+  } catch {
+    return true;
+  }
+}
+
 function sendPage(res, file) {
   res.sendFile(path.join(__dirname, 'public', file), {
     headers: { 'Cache-Control': 'no-cache' },
   });
 }
 
-app.get('/', async (req, res) => {
-  const hostSlug = slugFromHost(req);
-  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'index.html');
-  sendPage(res, 'landing.html');
-});
+// Hoort dit subdomein bij de lopende (niet-gearchiveerde) editie? Die hoort
+// op het hoofddomein thuis.
+async function isLiveSubdomain(slug) {
+  if (!pool) return false;
+  try {
+    const { rows } = await pool.query(
+      'SELECT 1 FROM events WHERE slug = $1 AND archived_at IS NULL',
+      [slug]
+    );
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
 
-// /admin: op een event-subdomein het routebeheer van dat event; op het
-// hoofddomein (of de onrender-URL) het platformbeheer, waar de
-// platformbeheerder nieuwe avondvierdaagsen aanmaakt.
-app.get('/admin', async (req, res) => {
+// Stuur de lopende editie van haar slug-subdomein (syncope.a4droute.nl)
+// blijvend door naar het hoofddomein (a4droute.nl), met behoud van pad en
+// query — zo raken bezoekers eraan gewend dat het subdomein niet meer nodig
+// is. Archief-subdomeinen (2026.a4droute.nl) blijven gewoon staan. Geeft
+// true als er is doorgestuurd.
+async function redirectLiveSubdomain(req, res) {
   const hostSlug = slugFromHost(req);
-  if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, 'admin.html');
-  sendPage(res, 'beheer.html');
-});
+  if (hostSlug && (await isLiveSubdomain(hostSlug))) {
+    res.redirect(301, `${req.protocol}://${BASE_DOMAIN}${req.originalUrl}`);
+    return true;
+  }
+  return false;
+}
 
-// Op een subdomein staan de overige subpagina's direct in de root.
+// Op een subdomein de pagina van dát event; op het hoofddomein de lopende
+// editie (de frontend gebruikt daar de '_live'-slug). `fallback` is wat het
+// hoofddomein toont als er (nog) geen lopende editie is.
+async function serveEventPage(req, res, file, fallback) {
+  if (await redirectLiveSubdomain(req, res)) return;
+  const hostSlug = slugFromHost(req);
+  if (hostSlug) return (await eventExists(hostSlug)) ? sendPage(res, file) : fallback(res);
+  return (await liveEventExists()) ? sendPage(res, file) : fallback(res);
+}
+
+app.get('/', (req, res) => serveEventPage(req, res, 'index.html', (r) => sendPage(r, 'landing.html')));
+
+// /admin: routebeheer van de editie — op het hoofddomein de lopende editie,
+// op een subdomein die editie. Het master-beheer staat los op /beheer.
+app.get('/admin', (req, res) => serveEventPage(req, res, 'admin.html', (r) => sendPage(r, 'landing.html')));
+
 for (const [route, file] of [
   ['/verkeer', 'verkeer.html'],
   ['/print', 'print.html'],
   ['/simulate', 'index.html'], // bezoekerspagina met gesimuleerde GPS (testen)
 ]) {
-  app.get(route, async (req, res) => {
-    const hostSlug = slugFromHost(req);
-    if (hostSlug && (await eventExists(hostSlug))) return sendPage(res, file);
-    res.redirect('/');
-  });
+  app.get(route, (req, res) => serveEventPage(req, res, file, (r) => r.redirect('/')));
 }
+
+// Editie-overzicht (huidige editie + eerdere jaren) en het master-beheer
+// (archiveren, wachtwoorden). Beide horen bij het hoofddomein; vanaf het
+// slug-subdomein van de lopende editie sturen we ook hier door.
+app.get('/edities', async (req, res) => {
+  if (await redirectLiveSubdomain(req, res)) return;
+  sendPage(res, 'landing.html');
+});
+app.get('/beheer', async (req, res) => {
+  if (await redirectLiveSubdomain(req, res)) return;
+  sendPage(res, 'beheer.html');
+});
 
 
 // Direct luisteren — Render zet een deploy pas live zodra de poort open is,
@@ -1494,5 +1806,15 @@ dbInit = initDb()
     console.log('Database klaar.');
   })
   .catch((err) => console.error('Database-initialisatie mislukt:', err));
+
+// MIGRATE_FROM_URL: zie migrateFromOldDatabase() hierboven. Los van dbInit
+// gehouden zodat een migratiefout de normale werking niet blokkeert.
+if (process.env.MIGRATE_FROM_URL) {
+  dbInit.then(() =>
+    migrateFromOldDatabase(process.env.MIGRATE_FROM_URL).catch((err) =>
+      console.error('Migratie vanaf oude database mislukt:', err)
+    )
+  );
+}
 
 app.listen(port, () => console.log(`Avond4Daagse routeplanner draait op poort ${port}`));

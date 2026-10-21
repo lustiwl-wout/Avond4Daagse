@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="color-scheme" content="only light" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Avond4Daagse Routeplanner</title>
+  <title>Avondvierdaagse Syncope</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -27,8 +27,8 @@
       border-radius: var(--radius);
       padding: 1rem;
     }
-    #event-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
-    #event-list a {
+    #event-list, #archive-list { list-style: none; display: flex; flex-direction: column; gap: 0.5rem; }
+    #event-list a, #archive-list a {
       display: block;
       background: var(--bg);
       border: 1px solid var(--line);
@@ -38,10 +38,10 @@
       color: var(--ink);
       text-decoration: none;
     }
-    #event-list a:hover { border-color: var(--brand); }
+    #event-list a:hover, #archive-list a:hover { border-color: var(--brand); }
+    #archive-list a { color: var(--muted); }
     .landing label { display: block; font-size: 0.8rem; color: var(--muted); margin: 0.6rem 0 0.2rem; }
     .landing input { margin-bottom: 0.2rem; }
-    .slug-preview { font-size: 0.8rem; color: var(--muted); }
   </style>
 </head>
 <body>
@@ -52,22 +52,29 @@
         <circle class="logo-dot" cx="12" cy="9" r="2.6"/>
       </svg>
       <div>
-        <h1>Avond4Daagse Routeplanner</h1>
-        <p class="sub">Routes en verkeersregelaars — voor elke avondvierdaagse</p>
+        <h1>Avondvierdaagse Syncope</h1>
+        <p class="sub">Basisschool Syncope · Almere</p>
       </div>
     </div>
+    <a href="/" id="back-link">Naar de avondvierdaagse</a>
   </header>
 
   <div class="landing">
     <div class="card">
-      <h2>Kies jouw avondvierdaagse</h2>
+      <h2>Huidige editie</h2>
       <ul id="event-list"><li class="hint">Laden…</li></ul>
+    </div>
+
+    <div class="card" id="archive-card" hidden>
+      <h2>Eerdere edities</h2>
+      <ul id="archive-list"></ul>
     </div>
 
   </div>
 
   <footer class="contact-footer">
     Vragen of hulp nodig? Mail <a href="mailto:wouter.lustig@outlook.com">wouter.lustig@outlook.com</a>
+    · <a href="/beheer">Beheer</a>
   </footer>
 
   <script src="/landing.js"></script>

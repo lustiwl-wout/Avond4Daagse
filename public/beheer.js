@@ -1,70 +1,18 @@
-// Platformbeheer (hoofddomein/admin): nieuwe avondvierdaagsen aanmaken met
-// het master-wachtwoord, en de bestaande lijst inzien.
-function slugify(name) {
-  return String(name)
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 40);
-}
+// Beheer (hoofddomein/admin): de edities inzien, een beheerwachtwoord
+// wijzigen of een afgelopen editie archiveren — alles met het
+// master-wachtwoord.
 
-const nameInput = document.getElementById('new-name');
-const slugInput = document.getElementById('new-slug');
-const preview = document.getElementById('slug-preview');
-let slugTouched = false;
-// Elk event leeft op een eigen subdomein; het basisdomein komt van de server.
+// Het basisdomein komt van de server.
 let baseDomain = location.hostname;
 
 function eventLink(slug, page = '') {
   return `${location.protocol}//${slug}.${baseDomain}${page}`;
 }
 
-function updatePreview() {
-  preview.textContent = slugInput.value ? `Pagina: ${eventLink(slugInput.value)}` : '';
+// De lopende editie staat op het hoofddomein; archieven op hun jaar-subdomein.
+function editionUrl(ev, page = '') {
+  return ev.archived ? eventLink(ev.slug, page) : `${location.protocol}//${baseDomain}${page}`;
 }
-
-nameInput.addEventListener('input', () => {
-  if (!slugTouched) slugInput.value = slugify(nameInput.value);
-  updatePreview();
-});
-
-slugInput.addEventListener('input', () => {
-  slugTouched = true;
-  slugInput.value = slugify(slugInput.value);
-  updatePreview();
-});
-
-document.getElementById('create-btn').addEventListener('click', async () => {
-  const status = document.getElementById('create-status');
-  status.textContent = 'Aanmaken…';
-  const res = await fetch('/api/events', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-admin-password': document.getElementById('master-password').value,
-    },
-    body: JSON.stringify({
-      name: nameInput.value,
-      slug: slugInput.value,
-      password: document.getElementById('new-password').value,
-    }),
-  });
-  if (res.ok) {
-    const { slug } = await res.json();
-    status.textContent = `Gelukt! De avondvierdaagse staat op ${eventLink(slug)} — beheer via ${eventLink(slug, '/admin')}.`;
-    nameInput.value = '';
-    slugInput.value = '';
-    document.getElementById('new-password').value = '';
-    slugTouched = false;
-    updatePreview();
-    loadEvents();
-  } else {
-    const err = await res.json().catch(() => ({}));
-    status.textContent = 'Let op: ' + (err.error || 'aanmaken mislukt.');
-  }
-});
 
 async function loadEvents() {
   const list = document.getElementById('event-list');
@@ -74,18 +22,23 @@ async function loadEvents() {
     const { baseDomain: base, events } = await res.json();
     if (base) baseDomain = base;
     list.innerHTML = '';
-    updatePreview();
     if (events.length === 0) {
-      list.innerHTML = '<li class="hint">Nog geen avondvierdaagsen.</li>';
+      list.innerHTML = '<li class="hint">Nog geen editie.</li>';
       return;
     }
     for (const ev of events) {
       const li = document.createElement('li');
       const name = document.createElement('span');
       name.textContent = ev.name;
+      if (ev.archived) {
+        const tag = document.createElement('span');
+        tag.className = 'hint';
+        tag.textContent = ' · archief';
+        name.appendChild(tag);
+      }
       li.appendChild(name);
       const links = document.createElement('span');
-      links.innerHTML = `<a href="${eventLink(ev.slug)}">bekijken</a> · <a href="${eventLink(ev.slug, '/admin')}">beheer</a> · `;
+      links.innerHTML = `<a href="${editionUrl(ev)}">bekijken</a> · <a href="${editionUrl(ev, '/admin')}">beheer</a> · `;
       const pwdLink = document.createElement('a');
       pwdLink.href = '#';
       pwdLink.textContent = 'wachtwoord';
@@ -94,11 +47,51 @@ async function loadEvents() {
         changeEventPassword(ev);
       });
       links.appendChild(pwdLink);
+      if (!ev.archived) {
+        links.appendChild(document.createTextNode(' · '));
+        const archiveLink = document.createElement('a');
+        archiveLink.href = '#';
+        archiveLink.textContent = 'archiveren';
+        archiveLink.addEventListener('click', (e) => {
+          e.preventDefault();
+          archiveEvent(ev);
+        });
+        links.appendChild(archiveLink);
+      }
       li.appendChild(links);
       list.appendChild(li);
     }
   } catch {
     list.innerHTML = '<li class="hint">Let op: lijst laden mislukt.</li>';
+  }
+}
+
+// Avondvierdaagse archiveren — met het master-wachtwoord. Het jaartal
+// komt achter de naam en het webadres en op het oude webadres start een
+// verse editie (zelfde naam en beheerwachtwoord).
+async function archiveEvent(ev) {
+  const status = document.getElementById('list-status');
+  const master = document.getElementById('master-password').value;
+  if (!master) {
+    status.textContent = 'Vul eerst het master-wachtwoord in (bovenaan).';
+    return;
+  }
+  const zeker = confirm(
+    `"${ev.name}" archiveren? De editie verhuist naar een webadres met het jaartal en op het hoofddomein start een verse editie voor volgend jaar.`
+  );
+  if (!zeker) return;
+  status.textContent = 'Archiveren…';
+  const res = await fetch(`/api/events/${encodeURIComponent(ev.slug)}/archive`, {
+    method: 'POST',
+    headers: { 'x-admin-password': master },
+  });
+  if (res.ok) {
+    const { archiveSlug } = await res.json();
+    status.textContent = `Gearchiveerd — het archief staat op ${eventLink(archiveSlug)}.`;
+    loadEvents();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    status.textContent = 'Let op: ' + (err.error || 'archiveren mislukt.');
   }
 }
 
